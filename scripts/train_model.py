@@ -1,3 +1,13 @@
+"""
+Implment trainer, evaluation pipelines for SSL and linear models.
+
+NOTE: Please update the hparams to best known configuration (ensures good defaults).
+
+Usage:
+python train_model.py --model resnet50M --dataset cifar10 --algorithm ssl --lr 0.1 --lambd 0.1 --epochs 10 --batch_size 128 --weight_decay 0.0 --seed 0
+"""
+
+
 from argparse import ArgumentParser
 from functools import partial
 from typing import List
@@ -12,12 +22,44 @@ from torch.optim import Adam
 import torchvision
 from tqdm import tqdm
 
+from fastargs import get_current_config
+from fastargs import Section, Param
+
 from fastssl.data import cifar_ffcv, cifar_classifier_ffcv
 from fastssl.models import barlow_twins as bt
 # import ResNet50Modified, BarlowTwinLoss
 
 
-CKPT_DIR = '/data/krishna/research/results/0313/003/checkpoints'
+Section('training', 'Fast CIFAR-10 training').params(
+    dataset=Param(
+        str, 'dataset', default='cifar10'),
+    train_dataset=Param(
+        str, 'train-dataset', default='/data/krishna/data/ffcv/cifar_train.beton'),
+    val_dataset=Param(
+        str, 'valid-dataset', default='/data/krishna/data/ffcv/cifar_test.beton'),
+    batch_size=Param(
+        int, 'batch-size', default=128),
+    epochs=Param(
+        int, 'epochs', default=10), 
+    lr=Param(
+        float, 'learning-rate', default=1e-3),
+    weight_decay=Param(
+        float, 'weight_decay', default=1e-6),
+    lambd=Param(
+        float, 'lambd', default=1/128),
+    seed=Param(
+        int, 'seed', default=1),
+    algorithm=Param(
+        str, 'learning algorithm', default='ssl'),
+    model=Param(
+        str, 'model to train', default='resnet50M'),
+    num_workers=Param(
+        int, 'num of CPU workers', default=2),
+    log_interval=Param(
+        int, 'log-interval in terms of epochs', default=1),
+    ckpt_dir=Param(
+        str, 'ckpt-dir', default='/data/krishna/research/results/0313/003/checkpoints')
+)
 
 
 def build_dataloaders(
@@ -167,18 +209,18 @@ def train(model, dataloader, optimizer, loss_fn, args):
         elif epoch % args.log_interval == 0:
             torch.save(
                 model.state_dict(),
-                os.path.join(CKPT_DIR,'barlow_model_{}_{}.pth'.format(args.algorithm, epoch)))
+                os.path.join(args.ckpt_dir,'barlow_model_{}_{}.pth'.format(args.algorithm, epoch)))
 
 
 
 def get_arguments():
-    parser = ArgumentParser(description='Fast CIFAR-10 training')
+    parser = ArgumentParser(description='Fast CIFAR-10 training', exit_on_error=False)
     parser.add_argument('--dataset', type=str, default='cifar10', metavar='DS',
                         help='dataset')
     parser.add_argument('--train-dataset', type=str, 
-        default='/data/krishna/data/ffcv/cifar_train.beton', metavar='DS', help='dataset')
+        default='/data/krishna/data/ffcv/cifar_train.beton', metavar='DS', help='train-dataset')
     parser.add_argument('--val-dataset', type=str, 
-        default='/data/krishna/data/ffcv/cifar_test.beton', metavar='DS', help='dataset')
+        default='/data/krishna/data/ffcv/cifar_test.beton', metavar='DS', help='valid-dataset')
     parser.add_argument('--batch-size', type=int, default=128, metavar='N',
                         help='input batch size for training (default: 128)')
 
@@ -214,18 +256,11 @@ def get_arguments():
 def set_seeds(seed):
     torch.manual_seed(seed)
     np.random.ssed(seed)
+ 
 
-if __name__ == "__main__":
-    ## gather arguments 
-    args = get_arguments()
-    args.lambd = 1/128
-    args.pretrained_path = CKPT_DIR
-
-    ## check CUDA
-    use_cuda = not args.no_cuda and torch.cuda.is_available()
-    device = torch.device("cuda" if use_cuda else "cpu")
-
-    start_time = time.time()
+def run_experiment(args):
+    # set_seeds(args.seed)
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     ## Use FFCV to build dataloaders 
     loaders = build_dataloaders(
@@ -251,7 +286,39 @@ if __name__ == "__main__":
     # train the model with default=BT
     train(model, loaders['train'], optimizer, loss_fn, args)
 
-    # wrapup experiments with loggin key variables
-    print(f'Total time: {time.time() - start_time:.5f}')
-    print(f'Models saved to {args.checkpoint_dir}')
+
+def merge_with_args(config):
+    base_config = get_current_config()
+    args = base_config.get().training
+    for key, val in config.items():
+        if key in args.__dict__.keys():
+            setattr(args, key, val)
+    return args
     
+
+def bt_trainer(config):
+    """
+    Trainer clas compatible with the ray api.
+    """
+    args = merge_with_args(config)
+    run_experiment(args)
+
+
+if __name__ == "__main__":
+    # gather arguments 
+    config = get_current_config()
+    parser = ArgumentParser(description='Fast CIFAR-10 training')
+    config.augment_argparse(parser)
+    config.collect_argparse_args(parser)
+    config.validate(mode='stderr')
+    config.summary()
+
+    args = config.get()
+    
+    start_time = time.time()
+    # train model 
+    run_experiment(args.training)
+
+    # wrapup experiments with logging key variables
+    print(f'Total time: {time.time() - start_time:.5f}')
+    print(f'Models saved to {args.training.ckpt_dir}')
