@@ -12,6 +12,7 @@ import time
 import numpy as np
 import ray
 from ray import tune
+from ray.tune import CLIReporter
 
 from train_model import bt_trainer
 
@@ -76,6 +77,9 @@ def build_lambd_sweep(args):
     return config 
 
 def run_hparam_sweep(trainer, config):
+    reporter = CLIReporter(max_progress_rows=10)
+    reporter.add_metric_column("loss")
+    reporter.add_metric_column("epoch")
     analysis = tune.run(
         trainer,
         config=config,
@@ -84,7 +88,9 @@ def run_hparam_sweep(trainer, config):
             "cpu": 2,
             "gpu": args.gpu_per_trial,
         },
+        local_dir='/data/krishna/research/fastssl/results',
         verbose=1,
+        progress_reporter=reporter,
     )
     return analysis
 

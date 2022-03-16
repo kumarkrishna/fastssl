@@ -14,6 +14,9 @@ from typing import List
 
 import numpy as np
 import os
+
+from ray import tune
+
 import time
 import torch
 from torch.cuda.amp import GradScaler, autocast
@@ -147,13 +150,13 @@ def train_step(model, dataloader, optimizer=None, loss_fn=None, epoch=None, epoc
     total_loss, total_num, num_batches= 0.0, 0, 0
 
     ## setiup dataloader + tqdm 
-    train_bar = tqdm(dataloader, desc='Train')
+    # train_bar = tqdm(dataloader, desc='Train')
 
     ## set model in train mode
     model.train()
     scaler = GradScaler()   
     
-    for inp in train_bar:
+    for inp in dataloader:
         ## backward
         optimizer.zero_grad()
         with autocast():
@@ -167,8 +170,9 @@ def train_step(model, dataloader, optimizer=None, loss_fn=None, epoch=None, epoc
         total_loss += loss.item() 
         num_batches += 1
 
-        train_bar.set_description(
-            'Train Epoch: [{}/{}] Loss: {:.4f}'.format(epoch, epochs, total_loss / num_batches))
+        tune.report(epoch=epoch, loss=total_loss/num_batches)
+        # train_bar.set_description(
+        #     'Train Epoch: [{}/{}] Loss: {:.4f}'.format(epoch, epochs, total_loss / num_batches))
     return total_loss / num_batches
 
 def eval_step(model, dataloader, epoch=None, epochs=None):
