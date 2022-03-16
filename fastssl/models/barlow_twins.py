@@ -16,7 +16,7 @@ def off_diagonal(x):
 
 def BarlowTwinLoss(model, inp, _lambda=None):
     """
-    Peform model forward pass and compute the loss.
+    Peform model forward pass and compute the BarlowTwin loss.
 
     Args:
         model: a torch.nn.Module
@@ -26,25 +26,15 @@ def BarlowTwinLoss(model, inp, _lambda=None):
         loss: scalar tensor
     """
 
-    ## generate samples from tuple 
+    # generate samples from tuple 
     (x1, x2), _ = inp
-    # x1, x2 = x1.cuda(non_blocking=True), x2.cuda(non_blocking=True)
+    x1, x2 = x1.cuda(non_blocking=True), x2.cuda(non_blocking=True)
     bsz = x1.shape[0]
 
-    # xs = torch.cat((x1, x2), dim=0)
-    # xs = xs.cuda(non_blocking=True)
-    # zs = model(xs)
-
-    # z, out = model(ys)
-    # z1, z2 = torch.split(zs, bsz)
-
-    ## forward pass
+    
+    # forward pass
     z1 = model(x1)
     z2 = model(x2)
-
-    # normalize the representations along the batch dimension
-    # assert z1.shape[0] == z2.shape[0], "Batch dim of z1 ({}) != z2 ({})".format(
-        # z1.shape[0], z2.shape[0])
 
     z1_norm = (z1 - z1.mean(0)) / z1.std(0) # NxD
     z2_norm = (z2 - z2.mean(0)) / z2.std(0) # NxD
@@ -54,7 +44,6 @@ def BarlowTwinLoss(model, inp, _lambda=None):
     on_diag = torch.diagonal(c).add_(-1).pow_(2).sum()
     off_diag = off_diagonal(c).pow_(2).sum()
 
-    ## loss_bt = invariance + _lambda * off_diag
     loss = on_diag + _lambda * off_diag
     return loss
 
@@ -107,12 +96,6 @@ class ResNet50Modified(nn.Module):
             nn.Linear(projector_dim[0], projector_dim[1], bias=True),
         )
 
-    def forward(self, x):
-        x = self.backbone(x)
-        feature = torch.flatten(x, start_dim=1)
-        out = self.projector(feature)
-        return F.normalize(feature, dim=-1), F.normalize(out, dim=-1)
-
     def is_valid_layer(self, module, dataset):
         """
         Check if the layer is valid for adding to the network
@@ -126,7 +109,6 @@ class ResNet50Modified(nn.Module):
             if isinstance(module, nn.BatchNorm1d):
                 return False
         return True
-
 
     def is_valid_layer(self, module, dataset):
         if dataset == 'cifar10':
@@ -146,9 +128,6 @@ class ResNet50Modified(nn.Module):
         x = self.backbone(x)
         features = torch.flatten(x, start_dim=1)
         projections = self.projector(features)
-
-        ## returns the normalized  projections
-        # return F.normalize(features, dim=-1),
         return F.normalize(projections, dim=-1)
 
     def feats(self, x):
@@ -165,21 +144,58 @@ class ResNet50Modified(nn.Module):
 
 class LinearClassifier(nn.Module):
     """
-    Linear classifier for the projector
+    Linear classifier with a backbone
     """
-    def __init__(self, pretrained_path, num_classes=10, dataset='cifar10'):
+    def __init__(self,
+                 num_classes=10, dataset='cifar10',
+                 bkey="resnet50M",
+                 pretrained_path=None, 
+                 ckpt_epoch=None, feat_dim=2048):
         super(LinearClassifier, self).__init__()
-        ckpt_path = self._get_ckpt_path(pretrained_path)
-        self.backbone = ResNet50Modified(dataset=dataset).backbone
-        self.fc = nn.Linear(2048, num_classes, bias=True)
-        self.load_state_dict(torch.load(ckpt_path, map_location='cpu'), strict=False)
+        # set arguments
+        self.bkey = bkey
+        self.dataset = dataset
+
+        # define model : backbone(resnet50modified) 
+        self.build_backbone()
+
+        # define linear classifier
+        self.fc = nn.Linear(feat_dim, num_classes, bias=True)
+
+        # load pretrained weights
+        # TODO : support loading pretrained classifier
+        self.load_from_ckpt(pretrained_path, ckpt_epoch=ckpt_epoch, classifer=False)
+        
         for param in self.backbone.parameters():
             param.requires_grad = False
 
-    def _get_ckpt_path(self, pretrained_path):
+    def build_backbone(self):
+        if self.bkey == 'resnet50M':
+            self.backbone = ResNet50Modified(dataset=self.dataset).backbone
+
+    def load_from_ckpt(self, pretrained_path, ckpt_epoch=None, classifer=True):
+        ckpt_path = self.get_ckpt_path(pretrained_path, ckpt_epoch)
+        if ckpt_path is not None:
+            ## map location cpu
+            self.load_state_dict(torch.load(ckpt_path, map_location="cpu"), strict=False)
+            print("Loaded pretrained weights from {}".format(ckpt_path))
+        
+
+    def get_ckpt_path(self, pretrained_path, ckpt_epoch=None):
+        if pretrained_path is None:
+            return None
         fnames = glob.glob(os.path.join(pretrained_path, '*.pth'))
+        if len(fnames) == 0:
+            return None
         fnames.sort()
-        return fnames[-1]
+        if ckpt_epoch is None:
+            # load the last checkpoint
+            ckpt_path = fnames[-1]
+        else:
+            # load the specified checkpoint_idx
+            ckpt_path = fnames[ckpt_epoch]
+        return ckpt_path
+
 
     def forward(self, x):
         feats = self.backbone(x)

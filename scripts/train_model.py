@@ -17,7 +17,7 @@ from fastssl.models import barlow_twins as bt
 # import ResNet50Modified, BarlowTwinLoss
 
 
-CKPT_DIR = '/data/krishna/research/results/0313/002/checkpoints'
+CKPT_DIR = '/data/krishna/research/results/0313/003/checkpoints'
 
 
 def build_dataloaders(
@@ -112,23 +112,17 @@ def train_step(model, dataloader, optimizer=None, loss_fn=None, epoch=None, epoc
     scaler = GradScaler()   
     
     for inp in train_bar:
-        # import pdb; pdb.set_trace()
-        # pass
-        # bsz = inp[0][0].shape[0]
-
         ## backward
         optimizer.zero_grad()
         with autocast():
             loss = loss_fn(model, inp)
-        # loss.backward()
-        # optimizer.step()
+        
         scaler.scale(loss).backward()
         scaler.step(optimizer)
         scaler.update()
 
         # ## update loss
         total_loss += loss.item() 
-        # total_num += labels.size(0)
         num_batches += 1
 
         train_bar.set_description(
@@ -170,7 +164,7 @@ def train(model, dataloader, optimizer, loss_fn, args):
 
         if args.algorithm == 'linear':
             eval_step(model, dataloader, epoch=epoch, epochs=EPOCHS)
-        elif epoch % 20 == 0:
+        elif epoch % args.log_interval == 0:
             torch.save(
                 model.state_dict(),
                 os.path.join(CKPT_DIR,'barlow_model_{}_{}.pth'.format(args.algorithm, epoch)))
@@ -212,6 +206,8 @@ def get_arguments():
                     help="model")
     parser.add_argument('--num-workers', type=int,  default=2,
                         metavar='N', help='num workers')
+    parser.add_argument('--log-interval', type=int, default=2, metavar='N',
+                        help='how many batches to wait before logging training status') 
     args = parser.parse_args()
     return args
 
@@ -252,11 +248,10 @@ if __name__ == "__main__":
     loss_fn = build_loss_fn(args)
     print("CONSTRUCTED LOSS FUNCTION")
 
-    ## train the model with BT
+    # train the model with default=BT
     train(model, loaders['train'], optimizer, loss_fn, args)
 
-
-    # # wrapup experiments with loggin key variables
-    # print(f'Total time: {time.time() - start_time:.5f}')
-    # print(f'Models saved to {args.checkpoint_dir}')
+    # wrapup experiments with loggin key variables
+    print(f'Total time: {time.time() - start_time:.5f}')
+    print(f'Models saved to {args.checkpoint_dir}')
     
