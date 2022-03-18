@@ -15,6 +15,7 @@ from typing import List
 import numpy as np
 import os
 
+from pathlib import Path
 from ray import tune
 
 import time
@@ -41,7 +42,7 @@ Section('training', 'Fast CIFAR-10 training').params(
     val_dataset=Param(
         str, 'valid-dataset', default='/data/krishna/data/ffcv/cifar_test.beton'),
     batch_size=Param(
-        int, 'batch-size', default=128),
+        int, 'batch-size', default=512),
     epochs=Param(
         int, 'epochs', default=10), 
     lr=Param(
@@ -58,10 +59,12 @@ Section('training', 'Fast CIFAR-10 training').params(
         str, 'model to train', default='resnet50M'),
     num_workers=Param(
         int, 'num of CPU workers', default=2),
+    projector_dim=Param(
+        int, 'projector dimension', default=128),
     log_interval=Param(
         int, 'log-interval in terms of epochs', default=1),
     ckpt_dir=Param(
-        str, 'ckpt-dir', default='/data/krishna/research/results/0313/003/checkpoints')
+        str, 'ckpt-dir', default='/data/krishna/research/results/0317/001/checkpoints')
 )
 
 
@@ -89,7 +92,7 @@ def build_model(args=None):
     """
     if args.model == 'resnet50M':
         model_args = {
-            'projector_arch': '512-128',
+            'projector_dim': args.projector_dim,
             'dataset': args.dataset,
             }
         model_cls = bt.ResNet50Modified
@@ -211,10 +214,18 @@ def train(model, dataloader, optimizer, loss_fn, args):
         if args.algorithm == 'linear':
             eval_step(model, dataloader, epoch=epoch, epochs=EPOCHS)
         elif epoch % args.log_interval == 0:
+            ckpt_path = gen_ckpt_path(args, epoch)
             torch.save(
                 model.state_dict(),
-                os.path.join(args.ckpt_dir,'barlow_model_{}_{}.pth'.format(args.algorithm, epoch)))
+                ckpt_path)
 
+def gen_ckpt_path(args, epoch):
+    ckpt_dir = os.path.join(
+        args.ckpt_dir, 'lambd_{:.6f}_pdim_{}'.format(args.lambd, args.projector_dim))
+    # create directory if it doesn't exist
+    Path(ckpt_dir).mkdir(parents=True, exist_ok=True)
+    # create ckpt file name
+    return os.path.join(ckpt_dir, 'exp_{}_{}.pth'.format(args.algorithm, epoch))
 
 
 def get_arguments():
@@ -225,12 +236,12 @@ def get_arguments():
         default='/data/krishna/data/ffcv/cifar_train.beton', metavar='DS', help='train-dataset')
     parser.add_argument('--val-dataset', type=str, 
         default='/data/krishna/data/ffcv/cifar_test.beton', metavar='DS', help='valid-dataset')
-    parser.add_argument('--batch-size', type=int, default=128, metavar='N',
+    parser.add_argument('--batch-size', type=int, default=512, metavar='N',
                         help='input batch size for training (default: 128)')
 
 
     ## optimization arguments
-    parser.add_argument('--epochs', type=int, default=10, metavar='N',
+    parser.add_argument('--epochs', type=int, default=30, metavar='N',
                         help='number of epochs to train (default: 10)')
     parser.add_argument('--lr', type=float, default=1e-3, metavar='LR',
                         help='learning rate (default: 0.01)')
@@ -250,9 +261,9 @@ def get_arguments():
                     help='For Saving the current Model')
     parser.add_argument('--model', type=str, default='resnet50M', metavar='MODEL',
                     help="model")
-    parser.add_argument('--num-workers', type=int,  default=2,
+    parser.add_argument('--num-workers', type=int,  default=4,
                         metavar='N', help='num workers')
-    parser.add_argument('--log-interval', type=int, default=2, metavar='N',
+    parser.add_argument('--log-interval', type=int, default=10, metavar='N',
                         help='how many batches to wait before logging training status') 
     args = parser.parse_args()
     return args

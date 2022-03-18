@@ -58,9 +58,10 @@ def build_projector_sweep(args):
     Build hyperparam sweep for projector in loss_fn of BT.
     """
     # setup config for ray
-    projector = np.logspace(args.projector_start, args.projector_end, args.num_samples, base=2).astype(int)
+    projector = list(np.logspace(
+            args.projector_start, args.projector_end, args.num_samples, base=2).astype(int))
     config = {
-        "projector_fim": tune.grid_search(projector),
+        "projector_dim": tune.grid_search(projector),
     }
     return config
 
@@ -71,13 +72,16 @@ def build_lambd_sweep(args):
     """
     # setup config for ray
     lambd = list(np.logspace(args.lambd_start, args.lambd_end, args.num_samples))
+    projector_dim = list(np.logspace(
+        args.projector_start, args.projector_end, args.num_samples, base=2).astype(int))
     config = {
         "lambd": tune.grid_search(lambd),
+        "projector_dim": tune.grid_search(projector_dim),
     }
     return config 
 
 def run_hparam_sweep(trainer, config):
-    reporter = CLIReporter(max_progress_rows=10)
+    reporter = CLIReporter(max_report_frequency=40, max_progress_rows=10)
     reporter.add_metric_column("loss")
     reporter.add_metric_column("epoch")
     analysis = tune.run(

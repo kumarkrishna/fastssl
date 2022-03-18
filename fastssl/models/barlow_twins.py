@@ -52,9 +52,9 @@ class ResNet50Modified(nn.Module):
     """
     Modified ResNet50 architecture to work with CIFAR10
     """
-    def __init__(self, projector_arch='512-128', dataset='cifar10'):
+    def __init__(self, projector_dim=128, dataset='cifar10'):
         super(ResNet50Modified, self).__init__()
-        self.projector_arch = projector_arch
+        self.projector_dim = projector_dim
         self.dataset = dataset 
 
         ## add encoder 
@@ -86,14 +86,14 @@ class ResNet50Modified(nn.Module):
         """
         Build the projector part of the network
         """
-        projector_dim = list(map(int, self.projector_arch.split('-')))
+        # projector_dim = list(map(int, self.projector_arch.split('-')))
         
         ## for now assume that we have two projector layers
         self.projector = nn.Sequential(
-            nn.Linear(2048, projector_dim[0], bias=False),
-            nn.BatchNorm1d(projector_dim[0]),
+            nn.Linear(2048, 512, bias=False),
+            nn.BatchNorm1d(512),
             nn.ReLU(inplace=True),
-            nn.Linear(projector_dim[0], projector_dim[1], bias=True),
+            nn.Linear(512, self.projector_dim, bias=True),
         )
 
     def is_valid_layer(self, module, dataset):
