@@ -38,9 +38,11 @@ Section('training', 'Fast CIFAR-10 training').params(
     dataset=Param(
         str, 'dataset', default='cifar10'),
     train_dataset=Param(
-        str, 'train-dataset', default='/data/krishna/data/ffcv/cifar_train.beton'),
+        # str, 'train-dataset', default='/data/krishna/data/ffcv/cifar_train.beton'),
+        str, 'train-dataset', default='../ffcv_datasets/CIFAR/train.beton'),
     val_dataset=Param(
-        str, 'valid-dataset', default='/data/krishna/data/ffcv/cifar_test.beton'),
+        # str, 'valid-dataset', default='/data/krishna/data/ffcv/cifar_test.beton'),
+        str, 'valid-dataset', default='../ffcv_datasets/CIFAR/test.beton'),
     batch_size=Param(
         int, 'batch-size', default=512),
     epochs=Param(
@@ -64,7 +66,8 @@ Section('training', 'Fast CIFAR-10 training').params(
     log_interval=Param(
         int, 'log-interval in terms of epochs', default=1),
     ckpt_dir=Param(
-        str, 'ckpt-dir', default='/data/krishna/research/results/0317/001/checkpoints')
+        # str, 'ckpt-dir', default='/data/krishna/research/results/0317/001/checkpoints')
+        str, 'ckpt-dir', default='checkpoints')
 )
 
 
@@ -99,7 +102,7 @@ def build_model(args=None):
     
     elif args.model == 'linear':
         model_args = {
-            'pretrained_path': args.pretrained_path,
+            'pretrained_path': os.path.join(args.ckpt_dir, 'lambd_{:.6f}_pdim_{}'.format(args.lambd, args.projector_dim)),
             'num_classes': 10,
             'dataset': args.dataset
         }
@@ -153,13 +156,14 @@ def train_step(model, dataloader, optimizer=None, loss_fn=None, epoch=None, epoc
     total_loss, total_num, num_batches= 0.0, 0, 0
 
     ## setiup dataloader + tqdm 
-    # train_bar = tqdm(dataloader, desc='Train')
+    train_bar = tqdm(dataloader, desc='Train')
 
     ## set model in train mode
     model.train()
     scaler = GradScaler()   
     
-    for inp in dataloader:
+    # for inp in dataloader:
+    for inp in train_bar:
         ## backward
         optimizer.zero_grad()
         with autocast():
@@ -173,9 +177,9 @@ def train_step(model, dataloader, optimizer=None, loss_fn=None, epoch=None, epoc
         total_loss += loss.item() 
         num_batches += 1
 
-        tune.report(epoch=epoch, loss=total_loss/num_batches)
-        # train_bar.set_description(
-        #     'Train Epoch: [{}/{}] Loss: {:.4f}'.format(epoch, epochs, total_loss / num_batches))
+        # tune.report(epoch=epoch, loss=total_loss/num_batches)
+        train_bar.set_description(
+            'Train Epoch: [{}/{}] Loss: {:.4f}'.format(epoch, epochs, total_loss / num_batches))
     return total_loss / num_batches
 
 def eval_step(model, dataloader, epoch=None, epochs=None):
@@ -199,20 +203,20 @@ def eval_step(model, dataloader, epoch=None, epochs=None):
         )
 
 
-def train(model, dataloader, optimizer, loss_fn, args):
+def train(model, loaders, optimizer, loss_fn, args):
     results = {'train_loss': []}
     EPOCHS = args.epochs
     for epoch in range(1, EPOCHS+1):
         train_loss = train_step(
             model=model,
-            dataloader=dataloader,
+            dataloader=loaders['train'],
             optimizer=optimizer,
             loss_fn=loss_fn, epoch=epoch, epochs=EPOCHS)
         
         results['train_loss'].append(train_loss)
 
         if args.algorithm == 'linear':
-            eval_step(model, dataloader, epoch=epoch, epochs=EPOCHS)
+            eval_step(model, loaders['test'], epoch=epoch, epochs=EPOCHS)
         elif epoch % args.log_interval == 0:
             ckpt_path = gen_ckpt_path(args, epoch)
             torch.save(
@@ -299,7 +303,7 @@ def run_experiment(args):
     print("CONSTRUCTED LOSS FUNCTION")
 
     # train the model with default=BT
-    train(model, loaders['train'], optimizer, loss_fn, args)
+    train(model, loaders, optimizer, loss_fn, args)
 
 
 def merge_with_args(config):

@@ -187,7 +187,8 @@ class LinearClassifier(nn.Module):
         fnames = glob.glob(os.path.join(pretrained_path, '*.pth'))
         if len(fnames) == 0:
             return None
-        fnames.sort()
+        # fnames.sort()
+        fnames.sort(key=lambda x:int(x.split('_')[-1].split('.')[0]))
         if ckpt_epoch is None:
             # load the last checkpoint
             ckpt_path = fnames[-1]
