@@ -130,6 +130,12 @@ class ResNet50Modified(nn.Module):
         projections = self.projector(features)
         return F.normalize(projections, dim=-1)
 
+    def projs(self, x):
+        x = self.backbone(x)
+        features = torch.flatten(x, start_dim=1)
+        projections = self.projector(features)
+        return projections
+
     def feats(self, x):
         """
         Args:
@@ -139,7 +145,18 @@ class ResNet50Modified(nn.Module):
         """
         x = self.backbone(x)
         features = torch.flatten(x, start_dim=1)
-        return F.normalize(features, dim=-1)
+        # return F.normalize(features, dim=-1)
+        return features
+    
+    def load_from_ckpt(self, ckpt_path):
+        self.load_state_dict(torch.load(ckpt_path, map_location="cpu"), strict=False)
+        print("Loaded pretrained weights from {}".format(ckpt_path))
+    
+    def get_epoch(path):
+        return map(int, path.split('_')[-1].split('.')[0])
+
+
+
 
 
 class LinearClassifier(nn.Module):
@@ -148,13 +165,14 @@ class LinearClassifier(nn.Module):
     """
     def __init__(self,
                  num_classes=10, dataset='cifar10',
-                 bkey="resnet50M",
-                 pretrained_path=None, 
+                 bkey="resnet50MP",
+                 ckpt_path=None, 
                  ckpt_epoch=None, feat_dim=2048):
         super(LinearClassifier, self).__init__()
         # set arguments
         self.bkey = bkey
         self.dataset = dataset
+        self.feat_dim = feat_dim
 
         # define model : backbone(resnet50modified) 
         self.build_backbone()
@@ -164,7 +182,7 @@ class LinearClassifier(nn.Module):
 
         # load pretrained weights
         # TODO : support loading pretrained classifier
-        self.load_from_ckpt(pretrained_path, ckpt_epoch=ckpt_epoch, classifer=False)
+        self.load_from_ckpt(ckpt_path, classifer=False)
         
         for param in self.backbone.parameters():
             param.requires_grad = False
@@ -172,16 +190,18 @@ class LinearClassifier(nn.Module):
     def build_backbone(self):
         if self.bkey == 'resnet50M':
             self.backbone = ResNet50Modified(dataset=self.dataset).backbone
+        elif self.bkey =='resnet50MP':
+            self.backbone = ResNet50Modified(dataset=self.dataset, projector_dim=self.feat_dim)
 
-    def load_from_ckpt(self, pretrained_path, ckpt_epoch=None, classifer=True):
-        ckpt_path = self.get_ckpt_path(pretrained_path, ckpt_epoch)
+    def load_from_ckpt(self, ckpt_path, classifer=True):
+        # ckpt_path = self.get_ckpt_path(ckpt_path, ckpt_epoch)
         if ckpt_path is not None:
             ## map location cpu
             self.load_state_dict(torch.load(ckpt_path, map_location="cpu"), strict=False)
             print("Loaded pretrained weights from {}".format(ckpt_path))
         
 
-    def get_ckpt_path(self, pretrained_path, ckpt_epoch=None):
+    def get_ckpt_path(self, ckpt_path, ckpt_epoch=None):
         if pretrained_path is None:
             return None
         fnames = glob.glob(os.path.join(pretrained_path, '*.pth'))
@@ -198,7 +218,10 @@ class LinearClassifier(nn.Module):
 
 
     def forward(self, x):
-        feats = self.backbone(x)
+        if self.bkey == 'resnet50MP':
+            feats = self.backbone.projs(x)
+        elif self.bkey == 'resnet50M':
+            feats = self.backbone(x)
         feats = torch.flatten(feats, start_dim=1)
         preds = self.fc(feats)
         return preds

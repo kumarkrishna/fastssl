@@ -44,7 +44,7 @@ Section('training', 'Fast CIFAR-10 training').params(
     batch_size=Param(
         int, 'batch-size', default=512),
     epochs=Param(
-        int, 'epochs', default=10), 
+        int, 'epochs', default=24), 
     lr=Param(
         float, 'learning-rate', default=1e-3),
     weight_decay=Param(
@@ -54,17 +54,17 @@ Section('training', 'Fast CIFAR-10 training').params(
     seed=Param(
         int, 'seed', default=1),
     algorithm=Param(
-        str, 'learning algorithm', default='ssl'),
+        str, 'learning algorithm', default='linear'),
     model=Param(
-        str, 'model to train', default='resnet50M'),
+        str, 'model to train', default='linear'),
     num_workers=Param(
-        int, 'num of CPU workers', default=2),
+        int, 'num of CPU workers', default=4),
     projector_dim=Param(
         int, 'projector dimension', default=128),
     log_interval=Param(
-        int, 'log-interval in terms of epochs', default=1),
+        int, 'log-interval in terms of epochs', default=20),
     ckpt_dir=Param(
-        str, 'ckpt-dir', default='/data/krishna/research/results/0317/001/checkpoints')
+        str, 'ckpt-dir', default='/data/krishna/research/results/0319/001/checkpoints')
 )
 
 
@@ -98,10 +98,12 @@ def build_model(args=None):
         model_cls = bt.ResNet50Modified
     
     elif args.model == 'linear':
+        ckpt_path = gen_ckpt_path(args, algorithm='ssl', epoch=100)
         model_args = {
-            'pretrained_path': args.pretrained_path,
+            'ckpt_path': ckpt_path,
             'num_classes': 10,
-            'dataset': args.dataset
+            'dataset': args.dataset,
+            'feat_dim': args.projector_dim
         }
         model_cls = bt.LinearClassifier
 
@@ -219,13 +221,15 @@ def train(model, dataloader, optimizer, loss_fn, args):
                 model.state_dict(),
                 ckpt_path)
 
-def gen_ckpt_path(args, epoch):
+def gen_ckpt_path(args, algorithm='ssl', epoch=100, prefix='exp', suffix='pth'):
     ckpt_dir = os.path.join(
         args.ckpt_dir, 'lambd_{:.6f}_pdim_{}'.format(args.lambd, args.projector_dim))
     # create directory if it doesn't exist
     Path(ckpt_dir).mkdir(parents=True, exist_ok=True)
     # create ckpt file name
-    return os.path.join(ckpt_dir, 'exp_{}_{}.pth'.format(args.algorithm, epoch))
+    ckpt_path = os.path.join(ckpt_dir, '{}_{}_{}.{}'.format(
+        prefix, algorithm, epoch, suffix))
+    return ckpt_path
 
 
 def get_arguments():

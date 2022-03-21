@@ -17,7 +17,7 @@ def to_device(device):
     if device == 'cuda:0':
         return ToDevice(device, non_blocking=True)
     else:
-        return ToDevice(device)
+        return ToDevice("cpu")
 
 def gen_image_pipeline(device="cuda:0", transform_cls=None):
     image_pipeline : List[Operation] = [

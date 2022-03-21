@@ -2,15 +2,12 @@ training:
   dataset: 'cifar10'
   train_dataset: '/data/krishna/data/ffcv/cifar_train.beton'
   val_dataset: '/data/krishna/data/ffcv/cifar_test.beton'
-  batch_size: 512
-  epochs: 30
-  lr: 1e-3
-  weight_decay: 1e-6
-  lambd: 0.0017825
+  batch_size: 128
+  epoch: 30
+  lambd: 0.000158
   project_dim: 128
   seed: 42
   algorithm: 'ssl'
   model: 'resnet50M'
   num_workers: 4
-  log_interval: 10
-  ckpt_dir: '/data/krishna/research/results/0317/001/checkpoints'
+  ckpt_dir: '/data/krishna/research/results/0318/001/checkpoints'

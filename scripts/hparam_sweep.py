@@ -15,24 +15,25 @@ from ray import tune
 from ray.tune import CLIReporter
 
 from train_model import bt_trainer
+from compute_alpha import alpha_trainer
 
 def build_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument('--num_samples', type=int, default=1, metavar='N',
                         help='samples')
-    parser.add_argument('--num_epochs', type=int, default=10, metavar='N',
+    parser.add_argument('--num_epochs', type=int, default=30, metavar='N',
                         help="num_epochs")
     
     # lambda sweep 
     parser.add_argument('--lambd_start', type=float, default=-5.0,
                         metavar='N', help="lambda start for BT loss")
-    parser.add_argument('--lambd_end', type=float, default=0,
+    parser.add_argument('--lambd_end', type=float, default=1,
                         metavar='N', help="lambda end for BT loss")
     
     # projector sweep
     parser.add_argument('--projector_start', type=float, default=7,
                         metavar='N', help="projector start for BT loss")    
-    parser.add_argument('--projector_end', type=float, default=10,
+    parser.add_argument('--projector_end', type=float, default=12,
                         metavar='N', help="projector end for BT loss")  
 
     # experiment details 
@@ -80,16 +81,18 @@ def build_lambd_sweep(args):
     }
     return config 
 
-def run_hparam_sweep(trainer, config):
+def run_hparam_sweep(trainer, config, metrics=["loss", "epoch"]):
     reporter = CLIReporter(max_report_frequency=40, max_progress_rows=10)
-    reporter.add_metric_column("loss")
-    reporter.add_metric_column("epoch")
+    for metric in metrics:
+        reporter.add_metric_column(metric)
+    
+    # run the analysis
     analysis = tune.run(
         trainer,
         config=config,
         name=args.name,
         resources_per_trial={
-            "cpu": 2,
+            "cpu": 4,
             "gpu": args.gpu_per_trial,
         },
         local_dir='/data/krishna/research/fastssl/results',
@@ -114,7 +117,9 @@ def build_trainer(args):
     """
     if args.exp == "bt":
         trainer = bt_trainer
-    
+    elif args.exp == "alpha":
+        trainer = alpha_trainer
+
     print("Built Trainer ... ")
     return trainer
 
