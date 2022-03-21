@@ -4,3 +4,8 @@ dist/
 
 results/
 **/__pycache__/
+checkpoints/
+sbatch_out/
+sbatch_err/
+**/._*.py
+**/*.DS_Store
