@@ -47,13 +47,55 @@ def BarlowTwinLoss(model, inp, _lambda=None):
     loss = on_diag + _lambda * off_diag
     return loss
 
+class BackBone:
+    def __init__(self, name='resnet50'):
+        super(BackBone, self).__init__()
+        self.name = name
+    
+    def build_backbone(self, dataset='cifar10'):
+        """
+        Build backbone model.
+        """
+        if self.name == 'resnet50':
+            self.backbone = self.resnet50mod(dataset)
+        else:
+            raise NotImplementedError
 
-class ResNet50Modified(nn.Module):
+        model = nn.Sequential(*self.backbone)
+        return model
+
+    def resnet50mod(self, dataset):
+        backbone = []
+        for name, module in resnet50().named_children():
+            if name == 'conv1':
+                module = nn.Conv2d(
+                    3, 64, kernel_size=3, stride=1, padding=1, bias=False)
+            # check validity for adding layer to module
+            if self.is_valid_layer(module, dataset):
+                backbone.append(module)
+        return backbone
+    
+    def is_valid_layer(self, module, dataset):
+        """
+        Check if a layer is valid for the dataset.
+        """
+        if dataset == 'cifar10':
+            return self._check_valid_layer_cifar10(module)
+        else:
+            raise NotImplementedError
+    
+    def _check_valid_layer_cifar10(self, module):
+        if not isinstance(module, nn.Linear) and not isinstance(module, nn.MaxPool2d):
+           return True
+        return False
+
+
+class BarlowTwins(nn.Module):
     """
     Modified ResNet50 architecture to work with CIFAR10
     """
     def __init__(self, projector_dim=128, dataset='cifar10'):
-        super(ResNet50Modified, self).__init__()
+        super(BarlowTwins, self).__init__()
         self.projector_dim = projector_dim
         self.dataset = dataset 
 
@@ -67,27 +109,13 @@ class ResNet50Modified(nn.Module):
         """
         Build the encoder part of the network
         """
-        ## modify conv1, remove (linear, maxpool2d)
-        backbone = []
-        for name, module in resnet50().named_children():
-            if name == 'conv1':
-                module = nn.Conv2d(
-                    3, 64, kernel_size=3, stride=1, padding=1, bias=False)
-            
-            ## check validity for adding layer to module
-            if self.is_valid_layer(module, self.dataset):
-                backbone.append(module)
-
-        ## add encoder 
-        self.backbone = nn.Sequential(*backbone)
-
-
+        backbone = BackBone(name='resnet50')
+        self.backbone = backbone.build_backbone(self.dataset)
+       
     def build_projector(self):
         """
         Build the projector part of the network
         """
-        # projector_dim = list(map(int, self.projector_arch.split('-')))
-        
         ## for now assume that we have two projector layers
         self.projector = nn.Sequential(
             nn.Linear(2048, 512, bias=False),
@@ -95,48 +123,23 @@ class ResNet50Modified(nn.Module):
             nn.ReLU(inplace=True),
             nn.Linear(512, self.projector_dim, bias=True),
         )
-
-    def is_valid_layer(self, module, dataset):
-        """
-        Check if the layer is valid for adding to the network
-        """
-        if isinstance(module, nn.Linear) or isinstance(module, nn.MaxPool2d):
-            return False
-        if dataset == 'cifar10':
-            if isinstance(module, nn.BatchNorm2d):
-                return False
-        elif dataset == 'tiny_imagenet' or dataset == 'stl10':
-            if isinstance(module, nn.BatchNorm1d):
-                return False
-        return True
-
-    def is_valid_layer(self, module, dataset):
-        if dataset == 'cifar10':
-            return self._check_valid_layer_cifar10(module)
-
-    def _check_valid_layer_cifar10(self, module):
-        return not isinstance(module, nn.Linear) and not isinstance(module, nn.MaxPool2d)
-
+    
     def forward(self, x):
         """
         Args:
             x: input image
         Returns:
-            features: feature vector
             projections: normalized projection vector
         """
-        x = self.backbone(x)
-        features = torch.flatten(x, start_dim=1)
-        projections = self.projector(features)
+        projections = self.unnormalized_project(x)
         return F.normalize(projections, dim=-1)
 
-    def projs(self, x):
-        x = self.backbone(x)
-        features = torch.flatten(x, start_dim=1)
-        projections = self.projector(features)
+    def unnormalized_project(self, x):
+        feats = self.unnormalized_feats(x)
+        projections = self.projector(feats)
         return projections
 
-    def feats(self, x):
+    def unnormalized_feats(self, x):
         """
         Args:
             x: input image
@@ -145,7 +148,6 @@ class ResNet50Modified(nn.Module):
         """
         x = self.backbone(x)
         features = torch.flatten(x, start_dim=1)
-        # return F.normalize(features, dim=-1)
         return features
     
     def load_from_ckpt(self, ckpt_path):
@@ -156,16 +158,13 @@ class ResNet50Modified(nn.Module):
         return map(int, path.split('_')[-1].split('.')[0])
 
 
-
-
-
 class LinearClassifier(nn.Module):
     """
     Linear classifier with a backbone
     """
     def __init__(self,
                  num_classes=10, dataset='cifar10',
-                 bkey="resnet50MP",
+                 bkey="resnet50M",
                  ckpt_path=None, 
                  ckpt_epoch=None, feat_dim=2048):
         super(LinearClassifier, self).__init__()
@@ -182,6 +181,7 @@ class LinearClassifier(nn.Module):
 
         # load pretrained weights
         # TODO : support loading pretrained classifier
+        # TODO : support finetuning projector
         self.load_from_ckpt(ckpt_path, classifer=False)
         
         for param in self.backbone.parameters():

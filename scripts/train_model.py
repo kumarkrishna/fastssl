@@ -4,7 +4,11 @@ Implment trainer, evaluation pipelines for SSL and linear models.
 NOTE: Please update the hparams to best known configuration (ensures good defaults).
 
 Usage:
-python train_model.py --model resnet50M --dataset cifar10 --algorithm ssl --lr 0.1 --lambd 0.1 --epochs 10 --batch_size 128 --weight_decay 0.0 --seed 0
+[local]
+python train_model.py --config-file configs/barlow_twins.yaml
+
+[CC cluster]
+python train_model.py --config-file configs/cc_barlow_twins.yaml
 """
 
 
@@ -16,6 +20,7 @@ import numpy as np
 import os
 
 from pathlib import Path
+import pickle
 from ray import tune
 
 import time
@@ -31,18 +36,15 @@ from fastargs import Section, Param
 
 from fastssl.data import cifar_ffcv, cifar_classifier_ffcv
 from fastssl.models import barlow_twins as bt
-# import ResNet50Modified, BarlowTwinLoss
 
 
 Section('training', 'Fast CIFAR-10 training').params(
     dataset=Param(
         str, 'dataset', default='cifar10'),
     train_dataset=Param(
-        # str, 'train-dataset', default='/data/krishna/data/ffcv/cifar_train.beton'),
-        str, 'train-dataset', default='../ffcv_datasets/CIFAR/train.beton'),
+        str, 'train-dataset', default='/data/krishna/data/ffcv/cifar_train.beton'),
     val_dataset=Param(
-        # str, 'valid-dataset', default='/data/krishna/data/ffcv/cifar_test.beton'),
-        str, 'valid-dataset', default='../ffcv_datasets/CIFAR/test.beton'),
+        str, 'valid-dataset', default='/data/krishna/data/ffcv/cifar_test.beton'),
     batch_size=Param(
         int, 'batch-size', default=512),
     epochs=Param(
@@ -56,9 +58,9 @@ Section('training', 'Fast CIFAR-10 training').params(
     seed=Param(
         int, 'seed', default=1),
     algorithm=Param(
-        str, 'learning algorithm', default='linear'),
+        str, 'learning algorithm', default='ssl'),
     model=Param(
-        str, 'model to train', default='linear'),
+        str, 'model to train', default='resnet50M'),
     num_workers=Param(
         int, 'num of CPU workers', default=4),
     projector_dim=Param(
@@ -66,8 +68,9 @@ Section('training', 'Fast CIFAR-10 training').params(
     log_interval=Param(
         int, 'log-interval in terms of epochs', default=20),
     ckpt_dir=Param(
-        # str, 'ckpt-dir', default='/data/krishna/research/results/0317/001/checkpoints')
-        str, 'ckpt-dir', default='checkpoints')
+        str, 'ckpt-dir', default='/data/krishna/research/results/0319/001/checkpoints'),
+    use_autocast=Param(
+        bool, 'autocast fp16', default=False)
 )
 
 
@@ -80,12 +83,10 @@ def build_dataloaders(
 
     if algorithm == 'ssl':
         return cifar_ffcv(
-            train_dataset, val_dataset,
-            batch_size, num_workers)
+            train_dataset, val_dataset, batch_size, num_workers)
     elif algorithm == 'linear':
         return cifar_classifier_ffcv(
-            train_dataset, val_dataset,
-            batch_size, num_workers)
+            train_dataset, val_dataset, batch_size, num_workers)
 
 
 def build_model(args=None):
@@ -98,7 +99,7 @@ def build_model(args=None):
             'projector_dim': args.projector_dim,
             'dataset': args.dataset,
             }
-        model_cls = bt.ResNet50Modified
+        model_cls = bt.BarlowTwins
     
     elif args.model == 'linear':
         ckpt_path = gen_ckpt_path(args, algorithm='ssl', epoch=100)
@@ -106,7 +107,7 @@ def build_model(args=None):
             'ckpt_path': ckpt_path,
             'num_classes': 10,
             'dataset': args.dataset,
-            'feat_dim': args.projector_dim
+            'feat_dim': 2048  # args.projector_dim
         }
         model_cls = bt.LinearClassifier
 
@@ -143,8 +144,7 @@ def build_optimizer(model, args=None):
         return Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
 
-
-def train_step(model, dataloader, optimizer=None, loss_fn=None, epoch=None, epochs=None):
+def train_step(model, dataloader, optimizer=None, loss_fn=None, use_autocast=False, epoch=None, epochs=None):
     """
     Generic trainer.
 
@@ -156,26 +156,35 @@ def train_step(model, dataloader, optimizer=None, loss_fn=None, epoch=None, epoc
     """
 
     total_loss, total_num, num_batches= 0.0, 0, 0
+    scaler = None
 
-    ## setiup dataloader + tqdm 
+    ## setup dataloader + tqdm 
     train_bar = tqdm(dataloader, desc='Train')
 
     ## set model in train mode
     model.train()
-    scaler = GradScaler()   
+
+    if use_autocast:
+        scaler = GradScaler()   
     
     # for inp in dataloader:
     for inp in train_bar:
         ## backward
         optimizer.zero_grad()
-        with autocast():
-            loss = loss_fn(model, inp)
-        
-        scaler.scale(loss).backward()
-        scaler.step(optimizer)
-        scaler.update()
 
-        # ## update loss
+        ## forward   
+        if use_autocast:
+            with autocast():
+                loss = loss_fn(model, inp)
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            loss = loss_fn(model, inp)
+            loss.backward()
+            optimizer.step()
+        
+        ## update loss
         total_loss += loss.item() 
         num_batches += 1
 
@@ -213,6 +222,7 @@ def train(model, loaders, optimizer, loss_fn, args):
             model=model,
             dataloader=loaders['train'],
             optimizer=optimizer,
+            use_autocast=args.use_autocast,
             loss_fn=loss_fn, epoch=epoch, epochs=EPOCHS)
         
         results['train_loss'].append(train_loss)
@@ -224,6 +234,7 @@ def train(model, loaders, optimizer, loss_fn, args):
             torch.save(
                 model.state_dict(),
                 ckpt_path)
+    return results
 
 def gen_ckpt_path(args, algorithm='ssl', epoch=100, prefix='exp', suffix='pth'):
     ckpt_dir = os.path.join(
@@ -307,7 +318,11 @@ def run_experiment(args):
     print("CONSTRUCTED LOSS FUNCTION")
 
     # train the model with default=BT
-    train(model, loaders, optimizer, loss_fn, args)
+    results = train(model, loaders, optimizer, loss_fn, args)
+
+    # save results
+    with open(args.save_path, 'wb') as f:
+        pickle.dump(results, f)
 
 
 def merge_with_args(config):
@@ -321,7 +336,7 @@ def merge_with_args(config):
 
 def bt_trainer(config):
     """
-    Trainer clas compatible with the ray api.
+    Trainer class compatible with the ray api.
     """
     args = merge_with_args(config)
     run_experiment(args)
@@ -339,6 +354,7 @@ if __name__ == "__main__":
     args = config.get()
     
     start_time = time.time()
+
     # train model 
     run_experiment(args.training)
 

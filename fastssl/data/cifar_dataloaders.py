@@ -4,14 +4,16 @@ from ffcv.fields import IntField, RGBImageField
 from ffcv.fields.decoders import IntDecoder, SimpleRGBImageDecoder
 from ffcv.loader import Loader, OrderOption
 from ffcv.pipeline.operation import Operation
+import numpy as np
 
-
-from ffcv.transforms import RandomHorizontalFlip, Cutout, \
+from ffcv.transforms import RandomResizedCrop, RandomHorizontalFlip, Cutout, \
     RandomTranslate, Convert, ToDevice, ToTensor, ToTorchImage
 from ffcv.transforms.common import Squeeze
 
 from fastssl.data.cifar_transforms import CifarTransform, CifarClassifierTransform
 
+import torch
+import torchvision.transforms as transforms
 
 def to_device(device):
     if device == 'cuda:0':
@@ -25,7 +27,7 @@ def gen_image_pipeline(device="cuda:0", transform_cls=None):
         ToTensor(),
         ToTorchImage(),
         to_device(device),
-        transform_cls()
+        transform_cls(),
     ]
     return image_pipeline
 

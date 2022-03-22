@@ -1,0 +1,13 @@
+training:
+  dataset: 'cifar10'
+  train_dataset: '../ffcv_datasets/CIFAR/train.beton'
+  val_dataset: '../ffcv_datasets/CIFAR/test.beton'
+  batch_size: 128
+  epoch: 30
+  lambd: 0.000158
+  project_dim: 128
+  seed: 42
+  algorithm: 'ssl'
+  model: 'resnet50M'
+  num_workers: 4
+  ckpt_dir: 'checkpoints'

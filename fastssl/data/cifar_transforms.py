@@ -1,6 +1,9 @@
 import torch
 from torch import nn, optim
 import torchvision.transforms as transforms
+from ffcv.transforms import RandomHorizontalFlip, RandomResizedCrop, Cutout, \
+	RandomTranslate, Convert, ToDevice, ToTensor, ToTorchImage
+
 
 # mean, std for normalized dataset
 CIFAR_MEAN = [0.485, 0.456, 0.406]
