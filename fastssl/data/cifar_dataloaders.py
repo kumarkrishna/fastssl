@@ -31,16 +31,18 @@ def to_device(device):
     else:
         return ToDevice("cpu")
 
-def gen_image_pipeline(device="cuda:0", transform_cls=None):
+def gen_image_pipeline(device="cuda:0", transform_cls=None, rescale=False):
     image_pipeline : List[Operation] = [
         SimpleRGBImageDecoder(),
         ToTensor(),
         to_device(device),
         ToTorchImage(),
         Convert(torch.float32),
-        ReScale(1.0/255.0),
-        transform_cls()
     ]
+    if rescale:
+        image_pipeline.append(ReScale(1.0/255.0))
+    image_pipeline.append(transform_cls())
+
     return image_pipeline
 
 def gen_label_pipeline(device="cuda:0", transform_cls=None):
@@ -57,6 +59,7 @@ def gen_image_label_pipeline(
     batch_size=None,
     num_workers=None,
     transform_cls=None,
+    rescale=False,
     device='cuda:0'):
     """
     Args:
@@ -78,9 +81,9 @@ def gen_image_label_pipeline(
     for split in ['train', 'test']:
         label_pipeline  = gen_label_pipeline(device=device)
         image_pipeline = gen_image_pipeline(
-            device=device, transform_cls=transform_cls)
+            device=device, transform_cls=transform_cls, rescale=rescale)
 
-        ordering = OrderOption.SEQUENTIAL if split == 'train' else OrderOption.SEQUENTIAL
+        ordering = OrderOption.RANDOM if split == 'train' else OrderOption.SEQUENTIAL
 
         loaders[split] = Loader(
             datadir[split],
@@ -107,6 +110,7 @@ def cifar_ffcv(
         batch_size=batch_size,
         num_workers=num_workers,
         transform_cls=transform_cls,
+        rescale=True,
         device=device)
 
 def cifar_classifier_ffcv(
@@ -139,6 +143,6 @@ def cifar_pt(
             root=datadir, train=split == 'train', download=True,
             transform=CifarPT())
         loaders[split] = DataLoader(
-            dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
+            dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
     return loaders
 

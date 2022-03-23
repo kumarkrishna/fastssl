@@ -7,9 +7,9 @@ training:
   epochs: 100
   lambd: 0.1
   project_dim: 128
-  seed: 42
+  seed: 1
   algorithm: 'ssl'
   model: 'resnet50proj'
   num_workers: 4
-  ckpt_dir: '/data/krishna/research/results/0322/005/checkpoints'
+  ckpt_dir: '/data/krishna/research/results/0322/006/checkpoints'
   use_autocast: True

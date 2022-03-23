@@ -53,7 +53,7 @@ class CifarClassifierTransform(nn.Module):
     def __init__(self):
         super().__init__()
         self.transform = transforms.Compose([
-            transforms.ConvertImageDtype(torch.float32),
+            # transforms.ConvertImageDtype(torch.float32),
             transforms.Normalize(mean=CIFAR_MEAN,
                                  std=CIFAR_STD)
         ])

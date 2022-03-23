@@ -93,11 +93,11 @@ def build_dataloaders(
     batch_size=128,
     num_workers=2):
     if algorithm == 'ssl':
-        # return cifar_pt(
-        #     datadir, batch_size=batch_size, num_workers=num_workers)
+        return cifar_pt(
+            datadir, batch_size=batch_size, num_workers=num_workers)
         # for ffcv cifar10 dataloader
-        return cifar_ffcv(
-            train_dataset, val_dataset, batch_size, num_workers)
+        # return cifar_ffcv(
+        #     train_dataset, val_dataset, batch_size, num_workers)
     elif algorithm == 'linear':
         # dataloader for classifier
         return cifar_classifier_ffcv(
@@ -236,20 +236,24 @@ def eval_step(model, dataloader, epoch=None, epochs=None):
             total_correct_1 += torch.sum((preds[:, 0:1] == target[:, None]).any(dim=-1).float()).item()
             total_correct_5 += torch.sum((preds[:, 0:5] == target[:, None]).any(dim=-1).float()).item()
 
+        acc_1 = total_correct_1 / total_samples * 100
+        acc_5 = total_correct_5 / total_samples * 100
         test_bar.set_description(
             '{} Epoch: [{}/{}] ACC@1: {:.2f}% ACC@5: {:.2f}%'.format(
                 'Test', epoch, epochs,
-                total_correct_1 / total_samples * 100,
-                total_correct_5 / total_samples * 100)
+                acc_1, acc_5)
         )
+    return acc_1, acc_5
 
 
 def train(model, loaders, optimizer, loss_fn, args):
-    results = {'train_loss': []}
+    results = {'train_loss': [], 'test_acc_1': [], 'test_acc_5': []}
     EPOCHS = args.epochs
 
     if args.use_autocast:
         scaler = GradScaler()
+    else:
+        scaler = None
     
     for epoch in range(1, EPOCHS+1):
         train_loss = train_step(
@@ -262,7 +266,9 @@ def train(model, loaders, optimizer, loss_fn, args):
         results['train_loss'].append(train_loss)
 
         if args.algorithm == 'linear':
-            eval_step(model, loaders['test'], epoch=epoch, epochs=EPOCHS)
+            acc_1, acc_5 = eval_step(model, loaders['test'], epoch=epoch, epochs=EPOCHS)
+            results['test_acc_1'].append(acc_1)
+            results['test_acc_5'].append(acc_5)
         elif epoch % args.log_interval == 0:
             ckpt_path = gen_ckpt_path(args, epoch=epoch)
             torch.save(
@@ -304,7 +310,7 @@ def run_experiment(args):
     results = train(model, loaders, optimizer, loss_fn, training)
 
     # save results
-    save_path = gen_ckpt_path(training, 'ssl', 100, 'results', 'json')
+    save_path = gen_ckpt_path(training, training.algorithm, 100, 'results', 'json')
     with open(save_path, 'wb') as f:
         pickle.dump(results, f)
 

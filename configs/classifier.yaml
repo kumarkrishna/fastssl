@@ -2,7 +2,7 @@ training:
   dataset: 'cifar10'
   train_dataset: '/data/krishna/data/ffcv/cifar_train.beton'
   val_dataset: '/data/krishna/data/ffcv/cifar_test.beton'
-  batch_size: 512
+  batch_size: 128
   epochs: 100
   lambd: 0.1
   project_dim: 128
@@ -10,7 +10,7 @@ training:
   algorithm: 'linear'
   model: 'resnet50feat'
   num_workers: 4
-  ckpt_dir: '/data/krishna/research/results/0322/004/checkpoints'
+  ckpt_dir: '/data/krishna/research/results/0322/006/checkpoints'
   use_autocast: True
 eval:
   train_algorithm: 'ssl'
