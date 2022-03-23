@@ -5,12 +5,12 @@ training:
   batch_size: 128
   epochs: 100
   lambd: 0.1
-  project_dim: 128
+  projector_dim: 2048
   seed: 42
   algorithm: 'linear'
   model: 'resnet50feat'
   num_workers: 4
-  ckpt_dir: '/data/krishna/research/results/0322/006/checkpoints'
+  ckpt_dir: '/data/krishna/research/results/0322/007/checkpoints'
   use_autocast: True
 eval:
   train_algorithm: 'ssl'

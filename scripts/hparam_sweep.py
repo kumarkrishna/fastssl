@@ -25,7 +25,7 @@ def build_parser():
                         help="num_epochs")
     
     # lambda sweep 
-    parser.add_argument('--lambd_start', type=float, default=-5.0,
+    parser.add_argument('--lambd_start', type=float, default=-4,
                         metavar='N', help="lambda start for BT loss")
     parser.add_argument('--lambd_end', type=float, default=1,
                         metavar='N', help="lambda end for BT loss")
@@ -62,7 +62,9 @@ def build_projector_sweep(args):
     projector = list(np.logspace(
             args.projector_start, args.projector_end, args.num_samples, base=2).astype(int))
     config = {
+        "lambd": 0.1,
         "projector_dim": tune.grid_search(projector),
+        "ckpt_dir": '/data/krishna/research/results/0322/007/checkpoints',
     }
     return config
 
@@ -73,11 +75,13 @@ def build_lambd_sweep(args):
     """
     # setup config for ray
     lambd = list(np.logspace(args.lambd_start, args.lambd_end, args.num_samples))
-    projector_dim = list(np.logspace(
-        args.projector_start, args.projector_end, args.num_samples, base=2).astype(int))
+    # projector_dim = list(np.logspace(
+    #     args.projector_start, args.projector_end, args.num_samples, base=2).astype(int))
     config = {
         "lambd": tune.grid_search(lambd),
-        "projector_dim": tune.grid_search(projector_dim),
+        "projector_dim": 512,
+        "ckpt_dir": '/data/krishna/research/results/0323/001/checkpoints',
+
     }
     return config 
 

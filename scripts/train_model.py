@@ -37,14 +37,14 @@ from fastargs import Section, Param
 
 from fastssl.data import cifar_ffcv, cifar_classifier_ffcv, cifar_pt
 from fastssl.models import barlow_twins as bt
-from fastssl.utils.base import set_seeds, get_args_from_config
+from fastssl.utils.base import set_seeds, get_args_from_config, merge_with_args
 
 
 Section('training', 'Fast CIFAR-10 training').params(
     dataset=Param(
         str, 'dataset', default='cifar10'),
     datadir=Param(
-        str, 'train data dir', default='/data/krishna/data/cifar10'),
+        str, 'train data dir', default='/data/krishna/data/cifar'),
     train_dataset=Param(
         str, 'train-dataset', default='/data/krishna/data/ffcv/cifar_train.beton'),
     val_dataset=Param(
@@ -52,7 +52,7 @@ Section('training', 'Fast CIFAR-10 training').params(
     batch_size=Param(
         int, 'batch-size', default=512),
     epochs=Param(
-        int, 'epochs', default=24), 
+        int, 'epochs', default=100), 
     lr=Param(
         float, 'learning-rate', default=1e-3),
     weight_decay=Param(
@@ -64,7 +64,7 @@ Section('training', 'Fast CIFAR-10 training').params(
     algorithm=Param(
         str, 'learning algorithm', default='ssl'),
     model=Param(
-        str, 'model to train', default='resnet50M'),
+        str, 'model to train', default='resnet50proj'),
     num_workers=Param(
         int, 'num of CPU workers', default=4),
     projector_dim=Param(
@@ -74,7 +74,7 @@ Section('training', 'Fast CIFAR-10 training').params(
     ckpt_dir=Param(
         str, 'ckpt-dir', default='/data/krishna/research/results/0319/001/checkpoints'),
     use_autocast=Param(
-        bool, 'autocast fp16', default=False),
+        bool, 'autocast fp16', default=True),
 )
 
 Section('eval', 'Fast CIFAR-10 evaluation').params(
@@ -191,13 +191,13 @@ def train_step(model, dataloader, optimizer=None, loss_fn=None, scaler=None, epo
     total_loss, total_num, num_batches= 0.0, 0, 0
 
     ## setup dataloader + tqdm 
-    train_bar = tqdm(dataloader, desc='Train')
+    # train_bar = tqdm(dataloader, desc='Train')
     
     ## set model in train mode
     model.train()
 
-    # for inp in dataloader:
-    for inp in train_bar:
+    for inp in dataloader:
+    # for inp in train_bar:
         ## backward
         optimizer.zero_grad()
 
@@ -217,9 +217,9 @@ def train_step(model, dataloader, optimizer=None, loss_fn=None, scaler=None, epo
         total_loss += loss.item() 
         num_batches += 1
 
-        # tune.report(epoch=epoch, loss=total_loss/num_batches)
-        train_bar.set_description(
-            'Train Epoch: [{}/{}] Loss: {:.4f}'.format(epoch, epochs, total_loss / num_batches))
+        tune.report(epoch=epoch, loss=total_loss/num_batches)
+        # train_bar.set_description(
+        #     'Train Epoch: [{}/{}] Loss: {:.4f}'.format(epoch, epochs, total_loss / num_batches))
     return total_loss / num_batches
 
 def eval_step(model, dataloader, epoch=None, epochs=None):

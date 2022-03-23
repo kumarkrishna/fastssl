@@ -18,3 +18,11 @@ def get_args_from_config():
     config.summary()
     args = config.get()
     return args
+
+def merge_with_args(config):
+    base_config = get_current_config()
+    args = base_config.get()
+    for key, val in config.items():
+        if key in args.training.__dict__.keys():
+            setattr(args.training, key, val)
+    return args
