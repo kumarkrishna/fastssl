@@ -4,11 +4,14 @@ training:
   val_dataset: '/data/krishna/data/ffcv/cifar_test.beton'
   batch_size: 512
   epochs: 100
-  lambd: 0.000158
+  lambd: 0.1
   project_dim: 128
   seed: 42
-  algorithm: 'ssl'
-  model: 'resnet50M'
+  algorithm: 'linear'
+  model: 'resnet50feat'
   num_workers: 4
-  ckpt_dir: '/data/krishna/research/results/0321/001/checkpoints'
+  ckpt_dir: '/data/krishna/research/results/0322/004/checkpoints'
   use_autocast: True
+eval:
+  train_algorithm: 'ssl'
+  epoch: 100

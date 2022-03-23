@@ -1,3 +1,10 @@
+"""
+## NOTE: Supports FFCV and PyTorch dataloaders. 
+* linear classifier: 
+    * FP16 is sufficient, reasonable speed and little drop in accuracy (Acc@1 is within +/- 0.1)
+* SSL : Seems like FP32 is important for good performance.
+    * 
+"""
 from typing import List 
 
 from ffcv.fields import IntField, RGBImageField
@@ -5,14 +12,17 @@ from ffcv.fields.decoders import IntDecoder, SimpleRGBImageDecoder
 from ffcv.loader import Loader, OrderOption
 from ffcv.pipeline.operation import Operation
 import numpy as np
-
+import torch
+import torchvision.transforms as tvt
 from ffcv.transforms import RandomResizedCrop, RandomHorizontalFlip, Cutout, \
     RandomTranslate, Convert, ToDevice, ToTensor, ToTorchImage
 from ffcv.transforms.common import Squeeze
 
-from fastssl.data.cifar_transforms import CifarTransform, CifarClassifierTransform
+from fastssl.data.cifar_transforms import CifarTransform, CifarClassifierTransform, CifarPT, ReScale
 
 import torch
+from torch.utils.data import DataLoader
+import torchvision
 import torchvision.transforms as transforms
 
 def to_device(device):
@@ -25,9 +35,11 @@ def gen_image_pipeline(device="cuda:0", transform_cls=None):
     image_pipeline : List[Operation] = [
         SimpleRGBImageDecoder(),
         ToTensor(),
-        ToTorchImage(),
         to_device(device),
-        transform_cls(),
+        ToTorchImage(),
+        Convert(torch.float32),
+        ReScale(1.0/255.0),
+        transform_cls()
     ]
     return image_pipeline
 
@@ -35,7 +47,7 @@ def gen_label_pipeline(device="cuda:0", transform_cls=None):
     label_pipeline: List[Operation] = [
         IntDecoder(),
         ToTensor(),
-        to_device(device),
+        ToDevice("cuda:0"),
         Squeeze()]
     return label_pipeline
 
@@ -68,7 +80,7 @@ def gen_image_label_pipeline(
         image_pipeline = gen_image_pipeline(
             device=device, transform_cls=transform_cls)
 
-        ordering = OrderOption.RANDOM if split == 'train' else OrderOption.SEQUENTIAL
+        ordering = OrderOption.SEQUENTIAL if split == 'train' else OrderOption.SEQUENTIAL
 
         loaders[split] = Loader(
             datadir[split],
@@ -76,11 +88,10 @@ def gen_image_label_pipeline(
             num_workers=num_workers,
             os_cache=True,
             order=ordering,
-            drop_last=True,
-            pipelines={'image' : image_pipeline, 'labels' : label_pipeline}
+            drop_last=False,
+            pipelines={'image' : image_pipeline, 'label' : label_pipeline}
            )
     return loaders
-
 
 def cifar_ffcv(
     train_dataset=None,
@@ -113,3 +124,21 @@ def cifar_classifier_ffcv(
         num_workers=num_workers,
         transform_cls=transform_cls,
         device=device)
+
+def cifar_pt(
+    datadir,
+    batch_size=None,
+    num_workers=None,
+    device="cuda:0"):
+    """
+    Create pytorch compatible dataloaders for CIFAR-10.
+    """
+    loaders = {}
+    for split in ['train', 'test']:
+        dataset = torchvision.datasets.CIFAR10(
+            root=datadir, train=split == 'train', download=True,
+            transform=CifarPT())
+        loaders[split] = DataLoader(
+            dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
+    return loaders
+

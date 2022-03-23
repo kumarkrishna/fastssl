@@ -27,20 +27,24 @@ import time
 import torch
 from torch.cuda.amp import GradScaler, autocast
 from torch.nn import CrossEntropyLoss
-from torch.optim import Adam
+from torch.optim import Adam, SGD, lr_scheduler
+
 import torchvision
 from tqdm import tqdm
 
-from fastargs import get_current_config
+
 from fastargs import Section, Param
 
-from fastssl.data import cifar_ffcv, cifar_classifier_ffcv
+from fastssl.data import cifar_ffcv, cifar_classifier_ffcv, cifar_pt
 from fastssl.models import barlow_twins as bt
+from fastssl.utils.base import set_seeds, get_args_from_config
 
 
 Section('training', 'Fast CIFAR-10 training').params(
     dataset=Param(
         str, 'dataset', default='cifar10'),
+    datadir=Param(
+        str, 'train data dir', default='/data/krishna/data/cifar10'),
     train_dataset=Param(
         str, 'train-dataset', default='/data/krishna/data/ffcv/cifar_train.beton'),
     val_dataset=Param(
@@ -70,23 +74,45 @@ Section('training', 'Fast CIFAR-10 training').params(
     ckpt_dir=Param(
         str, 'ckpt-dir', default='/data/krishna/research/results/0319/001/checkpoints'),
     use_autocast=Param(
-        bool, 'autocast fp16', default=False)
+        bool, 'autocast fp16', default=False),
+)
+
+Section('eval', 'Fast CIFAR-10 evaluation').params(
+    train_algorithm=Param(
+        str, 'pretrain algo', default='ssl'),
+    epoch=Param(
+        int, 'epoch', default=24)
 )
 
 
 def build_dataloaders(
     algorithm='ssl',
+    datadir='data/',
     train_dataset=None,
     val_dataset=None,
     batch_size=128,
     num_workers=2):
-
     if algorithm == 'ssl':
+        # return cifar_pt(
+        #     datadir, batch_size=batch_size, num_workers=num_workers)
+        # for ffcv cifar10 dataloader
         return cifar_ffcv(
             train_dataset, val_dataset, batch_size, num_workers)
     elif algorithm == 'linear':
+        # dataloader for classifier
         return cifar_classifier_ffcv(
             train_dataset, val_dataset, batch_size, num_workers)
+
+
+def gen_ckpt_path(args, train_algorithm='ssl', epoch=100, prefix='exp', suffix='pth'):
+    ckpt_dir = os.path.join(
+        args.ckpt_dir, 'lambd_{:.6f}_pdim_{}'.format(args.lambd, args.projector_dim))
+    # create directory if it doesn't exist
+    Path(ckpt_dir).mkdir(parents=True, exist_ok=True)
+    # create ckpt file name
+    ckpt_path = os.path.join(ckpt_dir, '{}_{}_{}.{}'.format(
+        prefix, train_algorithm, epoch, suffix))
+    return ckpt_path 
 
 
 def build_model(args=None):
@@ -94,20 +120,27 @@ def build_model(args=None):
     Returns:
         model : model to train
     """
-    if args.model == 'resnet50M':
+    training = args.training
+
+    if training.algorithm == 'ssl':
         model_args = {
-            'projector_dim': args.projector_dim,
-            'dataset': args.dataset,
+            'bkey': training.model,
+            'dataset': training.dataset,
+            'projector_dim': training.projector_dim,
             }
         model_cls = bt.BarlowTwins
     
-    elif args.model == 'linear':
-        ckpt_path = gen_ckpt_path(args, algorithm='ssl', epoch=100)
+    elif training.algorithm == 'linear':
+        ckpt_path = gen_ckpt_path(
+            training,
+            train_algorithm=args.eval.train_algorithm,
+            epoch=args.eval.epoch)
         model_args = {
+            'bkey': training.model, # supports : resnet50feat, resnet50proj
             'ckpt_path': ckpt_path,
+            'dataset': training.dataset,
+            'feat_dim': 2048,  # args.projector_dim
             'num_classes': 10,
-            'dataset': args.dataset,
-            'feat_dim': 2048  # args.projector_dim
         }
         model_cls = bt.LinearClassifier
 
@@ -122,9 +155,9 @@ def build_loss_fn(args=None):
     elif args.algorithm == 'linear':
         def classifier_xent(model, inp):
             x, y = inp
-            x, y = x.cuda(non_blocking=True), y.cuda(non_blocking=True).squeeze(1)
+            x, y = x.cuda(non_blocking=True), y.cuda(non_blocking=True)
             logits = model(x)
-            return CrossEntropyLoss()(logits, y)
+            return CrossEntropyLoss(label_smoothing=0.1)(logits, y)
         return classifier_xent
 
 
@@ -144,7 +177,7 @@ def build_optimizer(model, args=None):
         return Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
 
-def train_step(model, dataloader, optimizer=None, loss_fn=None, use_autocast=False, epoch=None, epochs=None):
+def train_step(model, dataloader, optimizer=None, loss_fn=None, scaler=None, epoch=None, epochs=None):
     """
     Generic trainer.
 
@@ -156,24 +189,20 @@ def train_step(model, dataloader, optimizer=None, loss_fn=None, use_autocast=Fal
     """
 
     total_loss, total_num, num_batches= 0.0, 0, 0
-    scaler = None
 
     ## setup dataloader + tqdm 
     train_bar = tqdm(dataloader, desc='Train')
-
+    
     ## set model in train mode
     model.train()
 
-    if use_autocast:
-        scaler = GradScaler()   
-    
     # for inp in dataloader:
     for inp in train_bar:
         ## backward
         optimizer.zero_grad()
 
         ## forward   
-        if use_autocast:
+        if scaler:
             with autocast():
                 loss = loss_fn(model, inp)
             scaler.scale(loss).backward()
@@ -203,8 +232,9 @@ def eval_step(model, dataloader, epoch=None, epochs=None):
         with autocast():
             logits = model(data)
             preds = torch.argsort(logits, dim=1, descending=True)
-            total_correct_1 += torch.sum((preds[:, 0:1] == target).any(dim=-1).float()).item()
-            total_correct_5 += torch.sum((preds[:, 0:5] == target).any(dim=-1).float()).item()
+            # import pdb; pdb.set_trace()
+            total_correct_1 += torch.sum((preds[:, 0:1] == target[:, None]).any(dim=-1).float()).item()
+            total_correct_5 += torch.sum((preds[:, 0:5] == target[:, None]).any(dim=-1).float()).item()
 
         test_bar.set_description(
             '{} Epoch: [{}/{}] ACC@1: {:.2f}% ACC@5: {:.2f}%'.format(
@@ -217,12 +247,16 @@ def eval_step(model, dataloader, epoch=None, epochs=None):
 def train(model, loaders, optimizer, loss_fn, args):
     results = {'train_loss': []}
     EPOCHS = args.epochs
+
+    if args.use_autocast:
+        scaler = GradScaler()
+    
     for epoch in range(1, EPOCHS+1):
         train_loss = train_step(
             model=model,
             dataloader=loaders['train'],
             optimizer=optimizer,
-            use_autocast=args.use_autocast,
+            scaler=scaler,
             loss_fn=loss_fn, epoch=epoch, epochs=EPOCHS)
         
         results['train_loss'].append(train_loss)
@@ -230,79 +264,28 @@ def train(model, loaders, optimizer, loss_fn, args):
         if args.algorithm == 'linear':
             eval_step(model, loaders['test'], epoch=epoch, epochs=EPOCHS)
         elif epoch % args.log_interval == 0:
-            ckpt_path = gen_ckpt_path(args, epoch)
+            ckpt_path = gen_ckpt_path(args, epoch=epoch)
             torch.save(
                 model.state_dict(),
                 ckpt_path)
     return results
 
-def gen_ckpt_path(args, algorithm='ssl', epoch=100, prefix='exp', suffix='pth'):
-    ckpt_dir = os.path.join(
-        args.ckpt_dir, 'lambd_{:.6f}_pdim_{}'.format(args.lambd, args.projector_dim))
-    # create directory if it doesn't exist
-    Path(ckpt_dir).mkdir(parents=True, exist_ok=True)
-    # create ckpt file name
-    ckpt_path = os.path.join(ckpt_dir, '{}_{}_{}.{}'.format(
-        prefix, algorithm, epoch, suffix))
-    return ckpt_path
 
-
-def get_arguments():
-    parser = ArgumentParser(description='Fast CIFAR-10 training', exit_on_error=False)
-    parser.add_argument('--dataset', type=str, default='cifar10', metavar='DS',
-                        help='dataset')
-    parser.add_argument('--train-dataset', type=str, 
-        default='/data/krishna/data/ffcv/cifar_train.beton', metavar='DS', help='train-dataset')
-    parser.add_argument('--val-dataset', type=str, 
-        default='/data/krishna/data/ffcv/cifar_test.beton', metavar='DS', help='valid-dataset')
-    parser.add_argument('--batch-size', type=int, default=512, metavar='N',
-                        help='input batch size for training (default: 128)')
-
-
-    ## optimization arguments
-    parser.add_argument('--epochs', type=int, default=30, metavar='N',
-                        help='number of epochs to train (default: 10)')
-    parser.add_argument('--lr', type=float, default=1e-3, metavar='LR',
-                        help='learning rate (default: 0.01)')
-    parser.add_argument('--weight-decay', type=float, default=1e-6, metavar='WD',
-                        help='weight decay (default: 0.0)')
-    parser.add_argument('--lambd', type=float, default=0.1, metavar='L',
-                        help='lambda for barlow twins loss')    
-
-    parser.add_argument('--no-cuda', action='store_true', default=False,
-                        help='disables CUDA training')
-    parser.add_argument('--seed', type=int, default=1, metavar='S',
-                        help='random seed (default: 1)')
-    parser.add_argument('--save-model', action='store_true', default=False,
-                        help='For Saving the current Model')
-    ## model arguments    
-    parser.add_argument('--algorithm', type=str, default='ssl', metavar='ALG',
-                    help='For Saving the current Model')
-    parser.add_argument('--model', type=str, default='resnet50M', metavar='MODEL',
-                    help="model")
-    parser.add_argument('--num-workers', type=int,  default=4,
-                        metavar='N', help='num workers')
-    parser.add_argument('--log-interval', type=int, default=10, metavar='N',
-                        help='how many batches to wait before logging training status') 
-    args = parser.parse_args()
-    return args
-
-def set_seeds(seed):
-    torch.manual_seed(seed)
-    np.random.ssed(seed)
- 
 
 def run_experiment(args):
-    # set_seeds(args.seed)
+    training = args.training
+
+    set_seeds(training.seed)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     ## Use FFCV to build dataloaders 
     loaders = build_dataloaders(
-        args.algorithm,
-        args.train_dataset,
-        args.val_dataset,
-        args.batch_size,
-        args.num_workers)
+        training.algorithm,
+        training.datadir,
+        training.train_dataset,
+        training.val_dataset,
+        training.batch_size,
+        training.num_workers)
     print("CONSTRUCTED DATA LOADERS")
 
     # build model from SSL library
@@ -310,29 +293,21 @@ def run_experiment(args):
     print("CONSTRUCTED MODEL")
 
     # build optimizer
-    optimizer = build_optimizer(model, args)
+    optimizer = build_optimizer(model, training)
     print("CONSTRUCTED OPTIMIZER")
 
     # get loss function
-    loss_fn = build_loss_fn(args)
+    loss_fn = build_loss_fn(training)
     print("CONSTRUCTED LOSS FUNCTION")
 
     # train the model with default=BT
-    results = train(model, loaders, optimizer, loss_fn, args)
+    results = train(model, loaders, optimizer, loss_fn, training)
 
     # save results
-    with open(args.save_path, 'wb') as f:
+    save_path = gen_ckpt_path(training, 'ssl', 100, 'results', 'json')
+    with open(save_path, 'wb') as f:
         pickle.dump(results, f)
 
-
-def merge_with_args(config):
-    base_config = get_current_config()
-    args = base_config.get().training
-    for key, val in config.items():
-        if key in args.__dict__.keys():
-            setattr(args, key, val)
-    return args
-    
 
 def bt_trainer(config):
     """
@@ -344,19 +319,11 @@ def bt_trainer(config):
 
 if __name__ == "__main__":
     # gather arguments 
-    config = get_current_config()
-    parser = ArgumentParser(description='Fast CIFAR-10 training')
-    config.augment_argparse(parser)
-    config.collect_argparse_args(parser)
-    config.validate(mode='stderr')
-    config.summary()
-
-    args = config.get()
-    
-    start_time = time.time()
+    args = get_args_from_config()
 
     # train model 
-    run_experiment(args.training)
+    start_time = time.time()
+    run_experiment(args)
 
     # wrapup experiments with logging key variables
     print(f'Total time: {time.time() - start_time:.5f}')

@@ -47,24 +47,25 @@ def BarlowTwinLoss(model, inp, _lambda=None):
     loss = on_diag + _lambda * off_diag
     return loss
 
-class BackBone:
-    def __init__(self, name='resnet50'):
+class BackBone(nn.Module):
+    def __init__(self,
+                 name='resnet50feat',
+                 dataset='cifar10', feat_dim=128):
         super(BackBone, self).__init__()
         self.name = name
-    
-    def build_backbone(self, dataset='cifar10'):
+        self.build_backbone(dataset, feat_dim)
+
+    def build_backbone(self, dataset='cifar10', feat_dim=128):
         """
         Build backbone model.
         """
-        if self.name == 'resnet50':
-            self.backbone = self.resnet50mod(dataset)
-        else:
-            raise NotImplementedError
+        if self.name == 'resnet50feat':
+            self._resnet50mod(dataset)
+        elif self.name == 'resnet50proj':
+            self._resnet50mod(dataset)
+            self.build_projector(projector_dim=feat_dim)
 
-        model = nn.Sequential(*self.backbone)
-        return model
-
-    def resnet50mod(self, dataset):
+    def _resnet50mod(self, dataset):
         backbone = []
         for name, module in resnet50().named_children():
             if name == 'conv1':
@@ -73,8 +74,17 @@ class BackBone:
             # check validity for adding layer to module
             if self.is_valid_layer(module, dataset):
                 backbone.append(module)
-        return backbone
+        self.feats = nn.Sequential(*backbone)
     
+    def build_projector(self, projector_dim):
+        projector = [
+            nn.Linear(2048, 512, bias=False),
+            nn.BatchNorm1d(512),
+            nn.ReLU(inplace=True),
+            nn.Linear(512, projector_dim, bias=True),
+        ]
+        self.proj = nn.Sequential(*projector)
+
     def is_valid_layer(self, module, dataset):
         """
         Check if a layer is valid for the dataset.
@@ -88,41 +98,23 @@ class BackBone:
         if not isinstance(module, nn.Linear) and not isinstance(module, nn.MaxPool2d):
            return True
         return False
+    
+    def forward(self, x):
+        return self.feats(x)
 
 
 class BarlowTwins(nn.Module):
     """
     Modified ResNet50 architecture to work with CIFAR10
     """
-    def __init__(self, projector_dim=128, dataset='cifar10'):
+    def __init__(self, bkey='resnet50proj', projector_dim=128, dataset='cifar10'):
         super(BarlowTwins, self).__init__()
         self.projector_dim = projector_dim
         self.dataset = dataset 
+        self.bkey = bkey
 
-        ## add encoder 
-        self.build_encoder()
-
-        ## add projection head
-        self.build_projector()
-
-    def build_encoder(self):
-        """
-        Build the encoder part of the network
-        """
-        backbone = BackBone(name='resnet50')
-        self.backbone = backbone.build_backbone(self.dataset)
-       
-    def build_projector(self):
-        """
-        Build the projector part of the network
-        """
-        ## for now assume that we have two projector layers
-        self.projector = nn.Sequential(
-            nn.Linear(2048, 512, bias=False),
-            nn.BatchNorm1d(512),
-            nn.ReLU(inplace=True),
-            nn.Linear(512, self.projector_dim, bias=True),
-        )
+        self.backbone = BackBone(
+            name=self.bkey, dataset=self.dataset, feat_dim=self.projector_dim)
     
     def forward(self, x):
         """
@@ -136,7 +128,7 @@ class BarlowTwins(nn.Module):
 
     def unnormalized_project(self, x):
         feats = self.unnormalized_feats(x)
-        projections = self.projector(feats)
+        projections = self.backbone.proj(feats)
         return projections
 
     def unnormalized_feats(self, x):
@@ -147,8 +139,8 @@ class BarlowTwins(nn.Module):
             features: feature vector
         """
         x = self.backbone(x)
-        features = torch.flatten(x, start_dim=1)
-        return features
+        feats = torch.flatten(x, start_dim=1)
+        return feats
     
     def load_from_ckpt(self, ckpt_path):
         self.load_state_dict(torch.load(ckpt_path, map_location="cpu"), strict=False)
@@ -163,10 +155,12 @@ class LinearClassifier(nn.Module):
     Linear classifier with a backbone
     """
     def __init__(self,
-                 num_classes=10, dataset='cifar10',
-                 bkey="resnet50M",
+                 num_classes=10,
+                 dataset='cifar10',
+                 bkey="resnet50feat",
                  ckpt_path=None, 
-                 ckpt_epoch=None, feat_dim=2048):
+                 ckpt_epoch=None,
+                 feat_dim=2048):
         super(LinearClassifier, self).__init__()
         # set arguments
         self.bkey = bkey
@@ -174,54 +168,35 @@ class LinearClassifier(nn.Module):
         self.feat_dim = feat_dim
 
         # define model : backbone(resnet50modified) 
-        self.build_backbone()
+        self.backbone = BackBone(self.bkey, self.dataset, self.feat_dim)
+
+        # load pretrained weights
+        self.load_backbone(ckpt_path, requires_grad=False)
 
         # define linear classifier
         self.fc = nn.Linear(feat_dim, num_classes, bias=True)
 
-        # load pretrained weights
+
         # TODO : support loading pretrained classifier
         # TODO : support finetuning projector
-        self.load_from_ckpt(ckpt_path, classifer=False)
-        
-        for param in self.backbone.parameters():
-            param.requires_grad = False
+    
 
-    def build_backbone(self):
-        if self.bkey == 'resnet50M':
-            self.backbone = ResNet50Modified(dataset=self.dataset).backbone
-        elif self.bkey =='resnet50MP':
-            self.backbone = ResNet50Modified(dataset=self.dataset, projector_dim=self.feat_dim)
-
-    def load_from_ckpt(self, ckpt_path, classifer=True):
+    def load_backbone(self, ckpt_path, requires_grad=False):
         # ckpt_path = self.get_ckpt_path(ckpt_path, ckpt_epoch)
+        # import pdb; pdb.set_trace()
         if ckpt_path is not None:
             ## map location cpu
             self.load_state_dict(torch.load(ckpt_path, map_location="cpu"), strict=False)
             print("Loaded pretrained weights from {}".format(ckpt_path))
         
-
-    def get_ckpt_path(self, ckpt_path, ckpt_epoch=None):
-        if pretrained_path is None:
-            return None
-        fnames = glob.glob(os.path.join(pretrained_path, '*.pth'))
-        if len(fnames) == 0:
-            return None
-        # fnames.sort()
-        fnames.sort(key=lambda x:int(x.split('_')[-1].split('.')[0]))
-        if ckpt_epoch is None:
-            # load the last checkpoint
-            ckpt_path = fnames[-1]
-        else:
-            # load the specified checkpoint_idx
-            ckpt_path = fnames[ckpt_epoch]
-        return ckpt_path
-
+        for param in self.backbone.parameters():
+            param.requires_grad = requires_grad
+        
 
     def forward(self, x):
-        if self.bkey == 'resnet50MP':
-            feats = self.backbone.projs(x)
-        elif self.bkey == 'resnet50M':
+        if self.bkey == 'resnet50proj':
+            feats = self.backbone.proj(x)
+        elif self.bkey == 'resnet50feat':
             feats = self.backbone(x)
         feats = torch.flatten(feats, start_dim=1)
         preds = self.fc(feats)

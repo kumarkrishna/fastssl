@@ -13,6 +13,5 @@ Training SSL
 Training Classifier  
 ```python scripts/train_model.py --config-file configs/classifier.yaml```
 
-
 Train on cluster 
 ```python scripts/train_model.py --config-file config/cc_barlow_twins.yaml```    

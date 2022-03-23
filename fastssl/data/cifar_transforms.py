@@ -10,6 +10,13 @@ CIFAR_MEAN = [0.485, 0.456, 0.406]
 CIFAR_STD = [0.229, 0.224, 0.225]
 
 
+class ReScale(nn.Module):
+    def __init__(self, scale):
+        super(ReScale, self).__init__()
+        self.scale = scale
+    def forward(self, x):
+        return x * self.scale
+
 class CifarTransform(nn.Module):
     """
     Generates pair of transformed images, primarily for SSL.
@@ -17,7 +24,8 @@ class CifarTransform(nn.Module):
     def __init__(self):
         super().__init__()        
         self.transform = transforms.Compose([
-            transforms.ConvertImageDtype(torch.float16),
+            # transforms.ConvertImageDtype(torch.float32),
+            # ReScale(1/255.),
             transforms.RandomResizedCrop(32),
             transforms.RandomHorizontalFlip(p=0.5),
             transforms.RandomApply(
@@ -30,6 +38,7 @@ class CifarTransform(nn.Module):
             transforms.Normalize(mean=CIFAR_MEAN,
                                  std=CIFAR_STD)
         ])
+
 
     def forward(self, x):
         y1 = self.transform(x)
@@ -44,10 +53,24 @@ class CifarClassifierTransform(nn.Module):
     def __init__(self):
         super().__init__()
         self.transform = transforms.Compose([
-            transforms.ConvertImageDtype(torch.float16),
+            transforms.ConvertImageDtype(torch.float32),
             transforms.Normalize(mean=CIFAR_MEAN,
                                  std=CIFAR_STD)
         ])
 
+    def forward(self, x):
+        return self.transform(x)
+
+# transforms for pytorch dataloaders
+class CifarPT(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.transform = transforms.Compose([
+            # NOTE : ToTensor normalized uint8 to float32 in range [0.0, 1.0]
+            #        This is handled for FFCV manually by adding a scaler.
+            transforms.ToTensor(),
+            CifarTransform()
+        ])
+    
     def forward(self, x):
         return self.transform(x)
