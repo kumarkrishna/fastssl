@@ -61,8 +61,25 @@ class CifarClassifierTransform(nn.Module):
     def forward(self, x):
         return self.transform(x)
 
+
+class STL10ClassifierTransform(nn.Module):
+    """
+    Generates transformed images, primarily for image classification.
+    """
+    def __init__(self):
+        super().__init__()
+        self.transform = transforms.Compose([
+            # transforms.ConvertImageDtype(torch.float32),
+            transforms.Normalize(mean=CIFAR_MEAN,
+                                 std=CIFAR_STD)
+        ])
+
+    def forward(self, x):
+        return self.transform(x)
+
+
 # transforms for pytorch dataloaders
-class CifarPT(torch.nn.Module):
+class SSLPT(torch.nn.Module):
     def __init__(self):
         super().__init__()
         self.transform = transforms.Compose([

@@ -18,7 +18,7 @@ from ffcv.transforms import RandomResizedCrop, RandomHorizontalFlip, Cutout, \
     RandomTranslate, Convert, ToDevice, ToTensor, ToTorchImage
 from ffcv.transforms.common import Squeeze
 
-from fastssl.data.cifar_transforms import CifarTransform, CifarClassifierTransform, CifarPT, ReScale
+from fastssl.data.cifar_transforms import CifarTransform, CifarClassifierTransform, SSLPT, ReScale
 
 import torch
 from torch.utils.data import DataLoader
@@ -141,7 +141,7 @@ def cifar_pt(
     for split in ['train', 'test']:
         dataset = torchvision.datasets.CIFAR10(
             root=datadir, train=split == 'train', download=True,
-            transform=CifarPT())
+            transform=SSLPT())
         loaders[split] = DataLoader(
             dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
     return loaders

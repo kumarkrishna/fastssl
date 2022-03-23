@@ -32,10 +32,9 @@ from torch.optim import Adam, SGD, lr_scheduler
 import torchvision
 from tqdm import tqdm
 
-
 from fastargs import Section, Param
 
-from fastssl.data import cifar_ffcv, cifar_classifier_ffcv, cifar_pt
+from fastssl.data import cifar_ffcv, cifar_classifier_ffcv, cifar_pt, stl10_pt
 from fastssl.models import barlow_twins as bt
 from fastssl.utils.base import set_seeds, get_args_from_config, merge_with_args
 
@@ -86,22 +85,37 @@ Section('eval', 'Fast CIFAR-10 evaluation').params(
 
 
 def build_dataloaders(
+    dataset='cifar10',
     algorithm='ssl',
     datadir='data/',
     train_dataset=None,
     val_dataset=None,
     batch_size=128,
     num_workers=2):
-    if algorithm == 'ssl':
-        return cifar_pt(
-            datadir, batch_size=batch_size, num_workers=num_workers)
-        # for ffcv cifar10 dataloader
-        # return cifar_ffcv(
-        #     train_dataset, val_dataset, batch_size, num_workers)
-    elif algorithm == 'linear':
-        # dataloader for classifier
-        return cifar_classifier_ffcv(
-            train_dataset, val_dataset, batch_size, num_workers)
+    if dataset == 'cifar10':
+        if algorithm == 'ssl':
+            return cifar_pt(
+                datadir, batch_size=batch_size, num_workers=num_workers)
+            # for ffcv cifar10 dataloader
+            # return cifar_ffcv(
+            #     train_dataset, val_dataset, batch_size, num_workers)
+        elif algorithm == 'linear':
+            # dataloader for classifier
+            return cifar_classifier_ffcv(
+                train_dataset, val_dataset, batch_size, num_workers)
+    elif dataset == 'stl10':
+        if algorithm == 'ssl':
+            return stl10_pt(
+                datadir,
+                splits=["train+unlabeled"],
+                batch_size=batch_size,
+                num_workers=num_workers)
+        elif algorithm == 'linear':
+            return stl10_classifier_pt(
+                datadir,
+                splits=["train", "test"],
+                batch_size=batch_size,
+                num_workers=num_workers)
 
 
 def gen_ckpt_path(args, train_algorithm='ssl', epoch=100, prefix='exp', suffix='pth'):
@@ -232,7 +246,6 @@ def eval_step(model, dataloader, epoch=None, epochs=None):
         with autocast():
             logits = model(data)
             preds = torch.argsort(logits, dim=1, descending=True)
-            # import pdb; pdb.set_trace()
             total_correct_1 += torch.sum((preds[:, 0:1] == target[:, None]).any(dim=-1).float()).item()
             total_correct_5 += torch.sum((preds[:, 0:5] == target[:, None]).any(dim=-1).float()).item()
 
@@ -286,6 +299,7 @@ def run_experiment(args):
 
     ## Use FFCV to build dataloaders 
     loaders = build_dataloaders(
+        training.dataset,
         training.algorithm,
         training.datadir,
         training.train_dataset,
