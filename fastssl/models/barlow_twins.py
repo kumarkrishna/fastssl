@@ -4,7 +4,9 @@ import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torchvision.models.resnet import resnet50
+
+from fastssl.models.ssl import SSL
+from fastssl.models.backbone import BackBone
 
 
 def off_diagonal(x):
@@ -47,107 +49,34 @@ def BarlowTwinLoss(model, inp, _lambda=None):
     loss = on_diag + _lambda * off_diag
     return loss
 
-class BackBone(nn.Module):
-    def __init__(self,
-                 name='resnet50feat',
-                 dataset='cifar10', feat_dim=128):
-        super(BackBone, self).__init__()
-        self.name = name
-        self.build_backbone(dataset, feat_dim)
 
-    def build_backbone(self, dataset='cifar10', feat_dim=128):
-        """
-        Build backbone model.
-        """
-        if self.name == 'resnet50feat':
-            self._resnet50mod(dataset)
-        elif self.name == 'resnet50proj':
-            self._resnet50mod(dataset)
-            self.build_projector(projector_dim=feat_dim)
-
-    def _resnet50mod(self, dataset):
-        backbone = []
-        for name, module in resnet50().named_children():
-            if name == 'conv1':
-                module = nn.Conv2d(
-                    3, 64, kernel_size=3, stride=1, padding=1, bias=False)
-            # check validity for adding layer to module
-            if self.is_valid_layer(module, dataset):
-                backbone.append(module)
-        self.feats = nn.Sequential(*backbone)
-    
-    def build_projector(self, projector_dim):
-        projector = [
-            nn.Linear(2048, 512, bias=False),
-            nn.BatchNorm1d(512),
-            nn.ReLU(inplace=True),
-            nn.Linear(512, projector_dim, bias=True),
-        ]
-        self.proj = nn.Sequential(*projector)
-
-    def is_valid_layer(self, module, dataset):
-        """
-        Check if a layer is valid for the dataset.
-        """
-        if dataset == 'cifar10':
-            return self._check_valid_layer_cifar10(module)
-        else:
-            raise NotImplementedError
-    
-    def _check_valid_layer_cifar10(self, module):
-        if not isinstance(module, nn.Linear) and not isinstance(module, nn.MaxPool2d):
-           return True
-        return False
-    
-    def forward(self, x):
-        return self.feats(x)
-
-
-class BarlowTwins(nn.Module):
+class BarlowTwins(SSL):
     """
     Modified ResNet50 architecture to work with CIFAR10
     """
-    def __init__(self, bkey='resnet50proj', projector_dim=128, dataset='cifar10'):
+    def __init__(self, bkey='resnet50proj', feat_dim=128, dataset='cifar10'):
         super(BarlowTwins, self).__init__()
-        self.projector_dim = projector_dim
+        self.feat_dim = feat_dim
         self.dataset = dataset 
         self.bkey = bkey
 
         self.backbone = BackBone(
-            name=self.bkey, dataset=self.dataset, feat_dim=self.projector_dim)
+            name=self.bkey, dataset=self.dataset, feat_dim=self.feat_dim)
     
     def forward(self, x):
-        """
-        Args:
-            x: input image
-        Returns:
-            projections: normalized projection vector
-        """
-        projections = self.unnormalized_project(x)
+        projections = self._unnormalized_project(x)
         return F.normalize(projections, dim=-1)
 
-    def unnormalized_project(self, x):
-        feats = self.unnormalized_feats(x)
+    def _unnormalized_project(self, x):
+        feats = self._unnormalized_feats(x)
         projections = self.backbone.proj(feats)
         return projections
 
-    def unnormalized_feats(self, x):
-        """
-        Args:
-            x: input image
-        Returns:
-            features: feature vector
-        """
+    def _unnormalized_feats(self, x):
         x = self.backbone(x)
         feats = torch.flatten(x, start_dim=1)
         return feats
     
-    def load_from_ckpt(self, ckpt_path):
-        self.load_state_dict(torch.load(ckpt_path, map_location="cpu"), strict=False)
-        print("Loaded pretrained weights from {}".format(ckpt_path))
-    
-    def get_epoch(path):
-        return map(int, path.split('_')[-1].split('.')[0])
 
 
 class LinearClassifier(nn.Module):

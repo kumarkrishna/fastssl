@@ -31,9 +31,9 @@ def build_parser():
                         metavar='N', help="lambda end for BT loss")
     
     # projector sweep
-    parser.add_argument('--projector_start', type=float, default=7,
+    parser.add_argument('--projector_start', type=float, default=8,
                         metavar='N', help="projector start for BT loss")    
-    parser.add_argument('--projector_end', type=float, default=12,
+    parser.add_argument('--projector_end', type=float, default=13,
                         metavar='N', help="projector end for BT loss")  
 
     # experiment details 
@@ -61,10 +61,11 @@ def build_projector_sweep(args):
     # setup config for ray
     projector = list(np.logspace(
             args.projector_start, args.projector_end, args.num_samples, base=2).astype(int))
+    lambd = [1e-4, 1e-3, 1e-2, 1e-1, 1]
     config = {
-        "lambd": 0.1,
+        "lambd": tune.grid_search(lambd),
         "projector_dim": tune.grid_search(projector),
-        "ckpt_dir": '/data/krishna/research/results/0322/007/checkpoints',
+        "ckpt_dir": '/data/krishna/research/results/0324/001/checkpoints',
     }
     return config
 

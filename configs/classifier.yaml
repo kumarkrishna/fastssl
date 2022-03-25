@@ -4,8 +4,8 @@ training:
   val_dataset: '/data/krishna/data/ffcv/cifar_test.beton'
   batch_size: 128
   epochs: 100
-  lambd: 0.1
-  projector_dim: 2048
+  lambd: 1e-5
+  projector_dim: 8192
   seed: 42
   algorithm: 'linear'
   model: 'resnet50feat'
