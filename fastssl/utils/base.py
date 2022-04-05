@@ -1,8 +1,12 @@
 from argparse import ArgumentParser
-import torch
 import numpy as np
+import os
 
 from fastargs import get_current_config
+from pathlib import Path
+
+import torch
+
 
 def set_seeds(seed):
     np.random.seed(seed)
@@ -26,3 +30,14 @@ def merge_with_args(config):
         if key in args.training.__dict__.keys():
             setattr(args.training, key, val)
     return args
+
+
+def gen_ckpt_path(args, train_algorithm='ssl', epoch=100, prefix='exp', suffix='pth'):
+    ckpt_dir = os.path.join(
+        args.ckpt_dir, 'lambd_{:.6f}_pdim_{}'.format(args.lambd, args.projector_dim))
+    # create directory if it doesn't exist
+    Path(ckpt_dir).mkdir(parents=True, exist_ok=True)
+    # create ckpt file name
+    ckpt_path = os.path.join(ckpt_dir, '{}_{}_{}.{}'.format(
+        prefix, train_algorithm, epoch, suffix))
+    return ckpt_path

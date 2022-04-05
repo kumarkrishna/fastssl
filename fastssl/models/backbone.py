@@ -6,20 +6,33 @@ class BackBone(nn.Module):
     def __init__(self,
                  name='resnet50feat',
                  dataset='cifar10', 
-                 feat_dim=128):
+                 bottleneck=None,
+                 feat_dim=2048,
+                 projector_dim=128):
         super(BackBone, self).__init__()
         self.name = name
-        self.build_backbone(dataset, feat_dim)
+        self.build_backbone(
+            dataset, bottleneck, feat_dim, projector_dim)
 
-    def build_backbone(self, dataset='cifar10', feat_dim=128):
+    def build_backbone(self,
+                       dataset='cifar10',
+                       bottleneck=None,
+                       feat_dim=2048,
+                       projector_dim=128):
         """
         Build backbone model.
         """
-        self._resnet50mod(dataset)
-        if self.name == 'resnet50proj':
-            self.build_projector(projector_dim=feat_dim)
+        # build the basic backbone
+        self._resnet50modify(dataset)
 
-    def _resnet50mod(self, dataset):
+        # build the projector
+        if self.name == 'resnet50proj':
+            self.build_projector(
+                bottleneck=bottleneck,
+                feat_dim=feat_dim,
+                projector_dim=projector_dim)
+
+    def _resnet50modify(self, dataset):
         backbone = []
         for name, module in resnet50().named_children():
             if name == 'conv1':
@@ -30,13 +43,18 @@ class BackBone(nn.Module):
                 backbone.append(module)
         self.feats = nn.Sequential(*backbone)
     
-    def build_projector(self, projector_dim):
+    def build_projector(self, feat_dim, projector_dim, bottleneck=None):
+        if bottleneck is None:
+            bottleneck = projector_dim
+
         projector = [
-            nn.Linear(2048, 512, bias=False),
-            nn.BatchNorm1d(512),
+            nn.Linear(feat_dim, bottleneck, bias=False),
+            nn.BatchNorm1d(bottleneck),
             nn.ReLU(inplace=True),
-            nn.Linear(512, projector_dim, bias=True),
+            nn.Linear(bottleneck, projector_dim, bias=True),
         ]
+
+        # build the projector
         self.proj = nn.Sequential(*projector)
 
     def is_valid_layer(self, module, dataset):
@@ -55,3 +73,10 @@ class BackBone(nn.Module):
     
     def forward(self, x):
         return self.feats(x)
+    
+    def features(self, x):
+        return self.feats(x)
+
+    def project(self, x):
+        feats = self.feats(x)
+        return self.proj(feats)

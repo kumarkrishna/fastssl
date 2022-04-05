@@ -140,7 +140,9 @@ def build_model(args=None):
         model_args = {
             'bkey': training.model,
             'dataset': training.dataset,
-            'projector_dim': training.projector_dim,
+            # the embedding dimension is the projector dimension
+            # TODO : rename to be consistent with the paper
+            'feat_dim': training.projector_dim,
             }
         model_cls = bt.BarlowTwins
     

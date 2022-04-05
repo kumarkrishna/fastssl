@@ -22,6 +22,9 @@ from pathlib import Path
 from sklearn.decomposition import PCA
 from tqdm import tqdm
 
+from fastssl.utils.base import get_args_from_config, gen_ckpt_path
+from fastssl.utils.powerlaw import PowerLaw
+
 
 Section('training', 'Fast CIFAR-10 training').params(
     dataset=Param(
@@ -56,6 +59,13 @@ Section('training', 'Fast CIFAR-10 training').params(
         str, 'ckpt-dir', default='/data/krishna/research/results/0319/001/checkpoints')
 )
 
+Section('eval', 'Fast CIFAR-10 evaluation').params(
+    train_algorithm=Param(
+        str, 'pretrain algo', default='ssl'),
+    epoch=Param(
+        int, 'epoch', default=24)
+)
+
 
 def get_eigenspectrum(activations, max_eigvals=2048):
     """
@@ -84,43 +94,33 @@ def get_ckpt_path(args, prefix='exp', suffix='pth'):
     return ckpt_path
 
 
-def gen_ckpt_path(args, prefix='exp', suffix='pth'):
-    ckpt_dir = os.path.join(
-        args.ckpt_dir, 'lambd_{:.6f}_pdim_{}'.format(args.lambd, args.projector_dim))
-    # create directory if it doesn't exist
-    Path(ckpt_dir).mkdir(parents=True, exist_ok=True)
-    # create ckpt file name
-    ckpt_path = os.path.join(ckpt_dir, '{}_{}_{}.{}'.format(
-        prefix, args.algorithm, args.epoch, suffix))
-    return ckpt_path
+def build_model(args):
+    training = args.training
 
+    ckpt_path = gen_ckpt_path(
+        training, 
+        train_algorithm=args.eval.train_algorithm,
+        epoch=args.eval.epoch)
 
-def load_model(args, model_name='resnet50M'):
-    if model_name == 'resnet50M':
-        model_args = {
-            'projector_dim' : args.projector_dim,
-            'dataset' : args.dataset
-        }
-        model_cls = bt.ResNet50Modified
-    
+    model_args = {
+        'bkey' : training.model,
+        'ckpt_path' : ckpt_path,
+        'dataset' : training.dataset,
+        'feat_dim' : 2048,
+    }
+
+    model_cls = bt.Featurize
+
     model = model_cls(**model_args)
-    
     model = model.to(memory_format=torch.channels_last).cuda()
-
-    if args.ckpt_dir:
-        ckpt_path = gen_ckpt_path(args)
-        model.load_from_ckpt(ckpt_path)
-        print('Model loaded from {}'.format(ckpt_path))
-    
     return model
         
-    
-def save_eigenspec(eigenspectrum, args):
-    filename = gen_ckpt_path(args, prefix='eigen_proj', suffix='npy')
-    print('Saving eigenspec to ... {}'.format(filename))
-    with open(filename, 'wb') as f:
-        np.save(f, eigenspectrum)
 
+def save_data(data, args, prefix='feats'):
+    filename = gen_ckpt_path(args, prefix=prefix, suffix='npy')
+    print('Saving {} to ... {}'.format(prefix, filename))
+    with open(filename, 'wb') as f:
+        np.save(f, data)
 
 
 def merge_with_args(config):
@@ -140,20 +140,24 @@ def alpha_trainer(config):
     store_eigenspectrum(args)
 
 
-def store_eigenspectrum(args):
-    model = load_model(args)
+def run_experiment(args):
+    training = args.training
+
+    model = build_model(args)
     loaders = cifar_classifier_ffcv(
-        args.train_dataset, args.val_dataset,
-        args.batch_size, args.num_workers)
+        training.train_dataset, training.val_dataset,
+        training.batch_size, training.num_workers)
+
     trainbar = tqdm(loaders['test'])
     img_feats = []
+
     for inp in trainbar:
         # import pdb; pdb.set_trace()
         img, _ = inp
         # img = img.cuda(non_blocking=True)
-        with autocast():
-            # feats = model.feats(img).cpu().detach().numpy()
-            feats = model.projs(img).cpu().detach().numpy()
+        # with autocast():
+        feats = model(img).cpu().detach().numpy()
+            # feats = model.projs(img).cpu().detach().numpy()
         img_feats.append(feats)
     
     img_feats = np.vstack(img_feats)
@@ -161,21 +165,16 @@ def store_eigenspectrum(args):
 
     eigenspec = get_eigenspectrum(np.array(img_feats))
     print("Computed eigenspectrum as {}".format(eigenspec.shape))
-    save_eigenspec(eigenspec, args)
 
-    
+    plaw = PowerLaw(variant='stringer')
+    alpha, _ = plaw.fit(eigenspec, (10, 100))
+    print("Computed alpha as {}".format(alpha))
 
+    # saves the eigenspectrum and features
+    save_data(img_feats, args.training, prefix='feats')
+    save_data(eigenspec, args.training, prefix='eigenspec_feats')
 
 
 if __name__ == "__main__":
-    config = get_current_config()
-    parser = ArgumentParser(description='Fast CIFAR-10 training')
-    config.augment_argparse(parser)
-    config.collect_argparse_args(parser)
-    config.validate(mode='stderr')
-    config.summary()
-
-    config.summary()
-
-    args = config.get()
-    store_eigenspectrum(args.training)
+    args = get_args_from_config()
+    run_experiment(args)
