@@ -18,7 +18,7 @@ from ffcv.transforms import RandomResizedCrop, RandomHorizontalFlip, Cutout, \
     RandomTranslate, Convert, ToDevice, ToTensor, ToTorchImage
 from ffcv.transforms.common import Squeeze
 
-from fastssl.data.cifar_transforms import CifarTransform, CifarClassifierTransform, SSLPT, ReScale
+from fastssl.data.cifar_transforms import CifarTransform, CifarClassifierTransform, SSLPT_CIFAR, ReScale
 
 import torch
 from torch.utils.data import DataLoader
@@ -83,7 +83,8 @@ def gen_image_label_pipeline(
         image_pipeline = gen_image_pipeline(
             device=device, transform_cls=transform_cls, rescale=rescale)
 
-        ordering = OrderOption.RANDOM if split == 'train' else OrderOption.SEQUENTIAL
+        # ordering = OrderOption.RANDOM if split == 'train' else OrderOption.SEQUENTIAL
+        ordering = OrderOption.RANDOM #if split == 'train' else OrderOption.SEQUENTIAL
 
         loaders[split] = Loader(
             datadir[split],
@@ -141,8 +142,9 @@ def cifar_pt(
     for split in ['train', 'test']:
         dataset = torchvision.datasets.CIFAR10(
             root=datadir, train=split == 'train', download=True,
-            transform=SSLPT())
+            transform=SSLPT_CIFAR())
         loaders[split] = DataLoader(
-            dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
+            # dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
+            dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=True)
     return loaders
 

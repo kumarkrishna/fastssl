@@ -4,11 +4,15 @@ import torchvision.transforms as transforms
 from ffcv.transforms import RandomHorizontalFlip, RandomResizedCrop, Cutout, \
 	RandomTranslate, Convert, ToDevice, ToTensor, ToTorchImage
 
-
 # mean, std for normalized dataset
 CIFAR_MEAN = [0.485, 0.456, 0.406]
 CIFAR_STD = [0.229, 0.224, 0.225]
-
+CIFAR_FFCV_MEAN = [125.307, 122.961, 113.8575]
+CIFAR_FFCV_STD = [51.5865, 50.847, 51.255]
+STL_MEAN = [0.4467, 0.4398, 0.4066]
+STL_STD = [0.2242, 0.2215, 0.2239]
+STL_FFCV_MEAN = [113.9112, 112.1515, 103.6948]
+STL_FFCV_STD = [57.1603, 56.4828, 57.0975]
 
 class ReScale(nn.Module):
     def __init__(self, scale):
@@ -45,6 +49,38 @@ class CifarTransform(nn.Module):
         y2 = self.transform(x)
         return (y1, y2)
 
+class STLTransform(nn.Module):
+    """
+    Generates pair of transformed images, primarily for SSL.
+    """
+    def __init__(self):
+        super().__init__()        
+        self.transform = transforms.Compose([
+            # transforms.ConvertImageDtype(torch.float32),
+            # ReScale(1/255.),
+            transforms.RandomApply(
+                [transforms.ColorJitter(
+                    brightness=0.4, contrast=0.4,
+                    saturation=0.4, hue=0.1)],
+                p=0.8
+            ),
+            transforms.RandomGrayscale(p=0.1),
+            transforms.RandomResizedCrop(
+                64,
+                scale=(0.2,1.0),
+                ratio=(0.75,(4/3)),
+                interpolation=transforms.InterpolationMode.BICUBIC,
+            ),
+            transforms.RandomHorizontalFlip(p=0.5),
+            transforms.Normalize(mean=STL_MEAN,
+                                 std=STL_STD)
+        ])
+
+
+    def forward(self, x):
+        y1 = self.transform(x)
+        y2 = self.transform(x)
+        return (y1, y2)
 
 class CifarClassifierTransform(nn.Module):
     """
@@ -54,15 +90,15 @@ class CifarClassifierTransform(nn.Module):
         super().__init__()
         self.transform = transforms.Compose([
             # transforms.ConvertImageDtype(torch.float32),
-            transforms.Normalize(mean=CIFAR_MEAN,
-                                 std=CIFAR_STD)
+            transforms.Normalize(mean=CIFAR_FFCV_MEAN,
+                                 std=CIFAR_FFCV_STD)
         ])
 
     def forward(self, x):
         return self.transform(x)
 
 
-class STL10ClassifierTransform(nn.Module):
+class STLClassifierTransform(nn.Module):
     """
     Generates transformed images, primarily for image classification.
     """
@@ -70,8 +106,8 @@ class STL10ClassifierTransform(nn.Module):
         super().__init__()
         self.transform = transforms.Compose([
             # transforms.ConvertImageDtype(torch.float32),
-            transforms.Normalize(mean=CIFAR_MEAN,
-                                 std=CIFAR_STD)
+            transforms.Normalize(mean=STL_FFCV_MEAN,
+                                 std=STL_FFCV_STD)
         ])
 
     def forward(self, x):
@@ -79,7 +115,7 @@ class STL10ClassifierTransform(nn.Module):
 
 
 # transforms for pytorch dataloaders
-class SSLPT(torch.nn.Module):
+class SSLPT_CIFAR(torch.nn.Module):
     def __init__(self):
         super().__init__()
         self.transform = transforms.Compose([
@@ -87,6 +123,19 @@ class SSLPT(torch.nn.Module):
             #        This is handled for FFCV manually by adding a scaler.
             transforms.ToTensor(),
             CifarTransform()
+        ])
+    
+    def forward(self, x):
+        return self.transform(x)
+
+class SSLPT_STL(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.transform = transforms.Compose([
+            # NOTE : ToTensor normalized uint8 to float32 in range [0.0, 1.0]
+            #        This is handled for FFCV manually by adding a scaler.
+            transforms.ToTensor(),
+            STLTransform()
         ])
     
     def forward(self, x):

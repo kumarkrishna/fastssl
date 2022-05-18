@@ -6,7 +6,7 @@ training:
   batch_size: 512
   epochs: 100
   lambd: 0.1
-  projector_dim: 128
+  project_dim: 128
   seed: 1
   algorithm: 'ssl'
   model: 'resnet50proj'

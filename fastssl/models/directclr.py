@@ -1,15 +1,9 @@
-"""
-Implement the DirectCLR model for contrastive self-supervised learning. 
-Paper : https://arxiv.org/abs/2110.09348
-Github : https://github.com/facebookresearch/directclr/blob/main/main.py
-"""
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torchvision.models.resnet import resnet50
 
-from fastssl.models.ssl import ContrastiveSSL
+from fastssl.models.ssl import SSL
 
 
 def infoNCE(nn, p, temperature=0.1):
@@ -29,7 +23,7 @@ def infoNCE(nn, p, temperature=0.1):
     return loss
 
 
-def DirectCLRLoss(model, inp, d0=None):
+def DirectCLRLoss(model, inp, lastidx=None):
     """
     Refer to https://arxiv.org/abs/2110.09348
 
@@ -41,15 +35,15 @@ def DirectCLRLoss(model, inp, d0=None):
         z' = E(T'(X))    # BxD
     
     define masked representation : 
-        z_mask = z[:d0]
-        z'_mask = z'[:d0]
+        z_mask = z[:lastidx]
+        z'_mask = z'[:lastidx]
 
     loss = InfoNCE(z_mask, z'_mask)
     
     Args:
         model: a torch.nn.Module
         inp: a torch.Tensor
-        d0: a float
+        lastidx: a float
     Returns:
         loss: scalar tensor
     """
@@ -63,27 +57,32 @@ def DirectCLRLoss(model, inp, d0=None):
     z1 = model(x1) # BxD
     z2 = model(x2) # BxD
 
-    z1_mask = z1[:, :d0] # BxD
-    z2_mask = z2[:, :d0] # BxD
+    z1_mask = z1[:lastidx] # BxD
+    z2_mask = z2[:lastidx] # BxD
 
     # compute InfoNCE loss jointly on both z1 and z2
     loss = infoNCE(z1_mask, z2_mask) / 2 + infoNCE(z2_mask, z1_mask) / 2
 
-
-    # TODO(krishna) : add online head loss
-
     return loss
 
 
-class DirectCLR(ContrastiveSSL):
+class DirectCLR(SSL):
     """
     Modified ResNet50 architecture to work with CIFAR10
     """
     def __init__(self, bkey='resnet50proj', feat_dim=128, dataset='cifar10'):
-        super(DirectCLR, self).__init__(
-            bkey=bkey, feat_dim=feat_dim, dataset=dataset)
+        super(DirectCLR, self).__init__()
+        self.feat_dim = feat_dim
+        self.dataset = dataset 
+        self.bkey = bkey
+
+        self.backbone = BackBone(
+            name=self.bkey, dataset=self.dataset, feat_dim=self.feat_dim)
     
     def forward(self, x):
         return self.unnormalized_feats(x)
 
-    
+    def unnormalized_feats(self, x):
+        x = self.backbone(x)
+        feats = torch.flatten(x, start_dim=1)
+        return feats
