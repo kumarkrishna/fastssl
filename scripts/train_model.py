@@ -23,7 +23,7 @@ from pathlib import Path
 import pickle
 from ray import tune
 
-import time
+import time, copy
 import torch
 from torch.cuda.amp import GradScaler, autocast
 from torch.nn import CrossEntropyLoss
@@ -34,10 +34,12 @@ from tqdm import tqdm
 
 from fastargs import Section, Param
 
-from fastssl.data import cifar_ffcv, cifar_classifier_ffcv, cifar_pt, stl10_pt
+from fastssl.data import cifar_ffcv, cifar_classifier_ffcv, cifar_pt, stl10_pt, stl_classifier_ffcv
 from fastssl.models import barlow_twins as bt
-from fastssl.utils.base import set_seeds, get_args_from_config, merge_with_args
+from fastssl.models import byol #, simclr
 
+from fastssl.utils.base import set_seeds, get_args_from_config, merge_with_args
+import fastssl.utils.powerlaw as powerlaw
 
 Section('training', 'Fast CIFAR-10 training').params(
     dataset=Param(
@@ -57,7 +59,9 @@ Section('training', 'Fast CIFAR-10 training').params(
     weight_decay=Param(
         float, 'weight_decay', default=1e-6),
     lambd=Param(
-        float, 'lambd', default=1/128),
+        float, 'lambd for BarlowTwins', default=1/128),
+    momentum_tau=Param(
+        float, 'momentum_tau for BYOL', default=0.01),
     seed=Param(
         int, 'seed', default=1),
     algorithm=Param(
@@ -68,6 +72,8 @@ Section('training', 'Fast CIFAR-10 training').params(
         int, 'num of CPU workers', default=4),
     projector_dim=Param(
         int, 'projector dimension', default=128),
+    hidden_dim=Param(
+        int, 'hidden dimension for BYOL projector', default=128),
     log_interval=Param(
         int, 'log-interval in terms of epochs', default=20),
     ckpt_dir=Param(
@@ -92,8 +98,8 @@ def build_dataloaders(
     val_dataset=None,
     batch_size=128,
     num_workers=2):
-    if dataset == 'cifar10':
-        if algorithm == 'ssl':
+    if 'cifar' in dataset:
+        if algorithm in ('BarlowTwins', 'SimCLR', 'ssl', 'byol'):
             return cifar_pt(
                 datadir, batch_size=batch_size, num_workers=num_workers)
             # for ffcv cifar10 dataloader
@@ -103,29 +109,45 @@ def build_dataloaders(
             # dataloader for classifier
             return cifar_classifier_ffcv(
                 train_dataset, val_dataset, batch_size, num_workers)
+        else:
+            raise Exception("Algorithm not implemented")
     elif dataset == 'stl10':
-        if algorithm == 'ssl':
+        if algorithm in ('BarlowTwins', 'SimCLR', 'ssl', 'byol'):
             return stl10_pt(
                 datadir,
-                splits=["train+unlabeled"],
+                splits=["unlabeled"],
                 batch_size=batch_size,
                 num_workers=num_workers)
         elif algorithm == 'linear':
-            return stl10_classifier_pt(
-                datadir,
-                splits=["train", "test"],
-                batch_size=batch_size,
-                num_workers=num_workers)
+            return stl_classifier_ffcv(
+                train_dataset, val_dataset, batch_size, num_workers)
+                # datadir,
+                # splits=["train", "test"],
+                # batch_size=batch_size,
+                # num_workers=num_workers)
+        else:
+            raise Exception("Algorithm not implemented")
 
 
 def gen_ckpt_path(args, train_algorithm='ssl', epoch=100, prefix='exp', suffix='pth'):
-    ckpt_dir = os.path.join(
-        args.ckpt_dir, 'lambd_{:.6f}_pdim_{}'.format(args.lambd, args.projector_dim))
+    if suffix=='pth':
+        main_dir = os.environ['SLURM_TMPDIR']
+        ckpt_dir = main_dir
+    else:
+        main_dir = args.ckpt_dir
+        if 'shallow' in args.model:
+            model_name = args.model
+            model_name = model_name.replace('proj','')
+            model_name = model_name.replace('feat','')
+            main_dir = os.path.join(main_dir,model_name)
+        ckpt_dir = os.path.join(
+            main_dir, 'lambd_{:.6f}_pdim_{}{}_lr_{}_wd_{}'.format(args.lambd, args.projector_dim,'_no_autocast' if not args.use_autocast else '',
+                                                                args.lr, args.weight_decay))
     # create directory if it doesn't exist
     Path(ckpt_dir).mkdir(parents=True, exist_ok=True)
     # create ckpt file name
-    ckpt_path = os.path.join(ckpt_dir, '{}_{}_{}.{}'.format(
-        prefix, train_algorithm, epoch, suffix))
+    ckpt_path = os.path.join(ckpt_dir, '{}_{}_{}{}.{}'.format(
+        prefix, train_algorithm, epoch, '_seed_{}'.format(args.seed) if 'linear' in train_algorithm else '',suffix))
     return ckpt_path 
 
 
@@ -136,15 +158,19 @@ def build_model(args=None):
     """
     training = args.training
 
-    if training.algorithm == 'ssl':
+    if training.algorithm in ('BarlowTwins', 'SimCLR', 'ssl', 'byol'):
         model_args = {
             'bkey': training.model,
             'dataset': training.dataset,
-            # the embedding dimension is the projector dimension
-            # TODO : rename to be consistent with the paper
-            'feat_dim': training.projector_dim,
+            'projector_dim': training.projector_dim,
             }
-        model_cls = bt.BarlowTwins
+        
+        if training.algorithm in ('byol', 'SimCLR'):
+            model_args['hidden_dim'] = training.hidden_dim
+            model_cls = byol.BYOL
+        else:
+            model_args['hidden_dim'] = training.projector_dim
+            model_cls = bt.BarlowTwins
     
     elif training.algorithm == 'linear':
         ckpt_path = gen_ckpt_path(
@@ -155,8 +181,8 @@ def build_model(args=None):
             'bkey': training.model, # supports : resnet50feat, resnet50proj
             'ckpt_path': ckpt_path,
             'dataset': training.dataset,
-            'feat_dim': 2048,  # args.projector_dim
-            'num_classes': 10,
+            'feat_dim': 2048,  # args.projector_dim ### THIS NEEDS TO BE CHECKED. I THINK IT NEEDS TO BE CHANGED TO args.projector_dim - ARNA
+            'num_classes': 10 if training.dataset in ['cifar10','stl10'] else 100, # STL10 evals could be underestimated because if condition changed later (July 4)
         }
         model_cls = bt.LinearClassifier
 
@@ -166,8 +192,10 @@ def build_model(args=None):
 
 
 def build_loss_fn(args=None):
-    if args.algorithm == 'ssl':
+    if args.algorithm in ('BarlowTwins', 'ssl'):
         return partial(bt.BarlowTwinLoss, _lambda=args.lambd)
+    elif args.algorithm == 'byol':
+        return byol.BYOLLoss
     elif args.algorithm == 'linear':
         def classifier_xent(model, inp):
             x, y = inp
@@ -175,6 +203,8 @@ def build_loss_fn(args=None):
             logits = model(x)
             return CrossEntropyLoss(label_smoothing=0.1)(logits, y)
         return classifier_xent
+    else:
+        raise Exception('Algorithm {} not implemented'.format(args.algorithm))
 
 
 def build_optimizer(model, args=None):
@@ -187,18 +217,22 @@ def build_optimizer(model, args=None):
     Returns:
         optimizer : optimizer for training model
     """
-    if args.algorithm == 'ssl':
+    if args.algorithm in ('BarlowTwins', 'SimCLR', 'ssl', 'byol'):
         return Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     elif args.algorithm == 'linear':
-        return Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+        default_lr = 1e-3
+        default_weight_decay = 1e-6
+        return Adam(model.parameters(), lr=default_lr, weight_decay=default_weight_decay)
+    else:
+        raise Exception('Algorithm not implemented')
 
-
-def train_step(model, dataloader, optimizer=None, loss_fn=None, scaler=None, epoch=None, epochs=None):
+def train_step(model, dataloader, args, target_model=None, optimizer=None, loss_fn=None, scaler=None, epoch=None):
     """
     Generic trainer.
 
     Args:
         model : 
+        target_model: Not None if BYOL
         dataloader :
         optimizer :
         loss_fn:
@@ -207,20 +241,25 @@ def train_step(model, dataloader, optimizer=None, loss_fn=None, scaler=None, epo
     total_loss, total_num, num_batches= 0.0, 0, 0
 
     ## setup dataloader + tqdm 
-    # train_bar = tqdm(dataloader, desc='Train')
+    train_bar = tqdm(dataloader, desc='Train')
     
     ## set model in train mode
     model.train()
 
-    for inp in dataloader:
-    # for inp in train_bar:
+    # for inp in dataloader:
+    for inp in train_bar:
         ## backward
         optimizer.zero_grad()
 
         ## forward   
         if scaler:
             with autocast():
-                loss = loss_fn(model, inp)
+                if args.algorithm == 'byol':
+                    loss = loss_fn(model, target_model, inp)
+                elif args.algorithm in ('BarlowTwins', 'SimCLR', 'ssl', 'linear'):
+                    loss = loss_fn(model, inp)
+                else:
+                    raise Exception('Algorithm not implemented')
             scaler.scale(loss).backward()
             scaler.step(optimizer)
             scaler.update()
@@ -233,9 +272,14 @@ def train_step(model, dataloader, optimizer=None, loss_fn=None, scaler=None, epo
         total_loss += loss.item() 
         num_batches += 1
 
-        tune.report(epoch=epoch, loss=total_loss/num_batches)
-        # train_bar.set_description(
-        #     'Train Epoch: [{}/{}] Loss: {:.4f}'.format(epoch, epochs, total_loss / num_batches))
+        if args.algorithm == 'byol':
+            byol.update_state_dict(target_model, model.state_dict(), args.momentum_tau)
+
+        import ray
+        if ray.tune.is_session_enabled():
+            tune.report(epoch=epoch, loss=total_loss/num_batches)
+        train_bar.set_description(
+            'Train Epoch: [{}/{}] Loss: {:.4f}'.format(epoch, args.epochs, total_loss / num_batches))
     return total_loss / num_batches
 
 def eval_step(model, dataloader, epoch=None, epochs=None):
@@ -261,27 +305,73 @@ def eval_step(model, dataloader, epoch=None, epochs=None):
     return acc_1, acc_5
 
 
+def debug_plot(activations_eigen,alpha,ypred,R2,R2_100,figname):
+    import matplotlib.pyplot as plt 
+    plt.loglog(np.arange(1,1+len(activations_eigen)),activations_eigen)
+    plt.loglog(np.arange(1,1+len(ypred)),ypred)
+    plt.title(r'$\alpha$={:.3f} R2={:.3f}, R_100={:.3f}'.format(alpha,R2,R2_100))
+    plt.savefig(figname)
+    plt.close('all')
+
+
 def train(model, loaders, optimizer, loss_fn, args):
     results = {'train_loss': [], 'test_acc_1': [], 'test_acc_5': []}
-    EPOCHS = args.epochs
+    
+    if args.algorithm == 'linear':
+        if args.use_autocast:
+            with autocast():
+                # alpha_arr, R2_arr, R2_100_arr = powerlaw.stringer_get_powerlaw_batch(net=model,layer=model.fc,
+                #                                                                     # data_loader=loaders['test'],trange=np.arange(50,200),
+                #                                                                     data_loader=loaders['test'],trange=np.arange(5,50),
+                #                                                                     use_cuda=True)
+                activations = powerlaw.generate_activations_prelayer(net=model,layer=model.fc,data_loader=loaders['test'],use_cuda=True)
+                activations_eigen = powerlaw.get_eigenspectrum(activations)
+                # alpha,ypred,R2,R2_100 = powerlaw.stringer_get_powerlaw(activations_eigen,trange=np.arange(3,500))
+                alpha,ypred,R2,R2_100 = powerlaw.stringer_get_powerlaw(activations_eigen,trange=np.arange(3,100))
+                # debug_plot(activations_eigen,alpha,ypred,R2,R2_100,'test_full_early_{:.4f}.png'.format(args.lambd))
+                # save_path = gen_ckpt_path(args, args.algorithm, args.epochs, 'results_{}_full_early_alpha'.format(args.dataset), 'npy')
+                # np.save(save_path,dict(alpha=alpha,R2=R2,R2_100=R2_100))
+                # breakpoint()
+                results['eigenspectrum'] = activations_eigen
+                results['alpha'] = alpha
+                results['R2'] = R2
+                results['R2_100'] = R2_100
+        else:
+            alpha_arr, R2_arr, R2_100_arr = powerlaw.stringer_get_powerlaw_batch(net=model,layer=model.fc,
+                                                                                # data_loader=loaders['test'],trange=np.arange(50,200),
+                                                                                data_loader=loaders['test'],trange=np.arange(5,50),
+                                                                                use_cuda=True)
+
+            results['alpha_arr'] = alpha_arr
+            results['R2_arr'] = R2_arr
+            results['R2_100_arr'] = R2_100_arr
 
     if args.use_autocast:
         scaler = GradScaler()
     else:
         scaler = None
     
-    for epoch in range(1, EPOCHS+1):
+
+    if args.algorithm == 'byol':
+        target_model = copy.deepcopy(model)
+        for param in (list(target_model.parameters())):
+            param.requires_grad = False
+
+    for epoch in range(1, args.epochs+1):
         train_loss = train_step(
             model=model,
             dataloader=loaders['train'],
+            target_model= target_model if args.algorithm == 'byol' else None,
             optimizer=optimizer,
             scaler=scaler,
-            loss_fn=loss_fn, epoch=epoch, epochs=EPOCHS)
+            loss_fn=loss_fn, 
+            epoch=epoch, 
+            args=args)
         
         results['train_loss'].append(train_loss)
 
         if args.algorithm == 'linear':
-            acc_1, acc_5 = eval_step(model, loaders['test'], epoch=epoch, epochs=EPOCHS)
+            acc_1, acc_5 = eval_step(model, loaders['test'], epoch=epoch, epochs=args.epochs)
             results['test_acc_1'].append(acc_1)
             results['test_acc_5'].append(acc_5)
         elif epoch % args.log_interval == 0:
@@ -294,6 +384,9 @@ def train(model, loaders, optimizer, loss_fn, args):
 
 
 def run_experiment(args):
+    # import ray
+    # num_cpus = int(os.environ.get('SLURM_CPUS_PER_TASK'))
+    # ray.init(num_cpus=2)
     training = args.training
 
     set_seeds(training.seed)
@@ -326,9 +419,10 @@ def run_experiment(args):
     results = train(model, loaders, optimizer, loss_fn, training)
 
     # save results
-    save_path = gen_ckpt_path(training, training.algorithm, 100, 'results', 'json')
-    with open(save_path, 'wb') as f:
-        pickle.dump(results, f)
+    save_path = gen_ckpt_path(training, training.algorithm, training.epochs, 'results_{}_early_alpha'.format(training.dataset), 'npy')
+    # with open(save_path, 'wb') as f:
+        # pickle.dump(results, f)
+    np.save(save_path,results)
 
 
 def bt_trainer(config):
@@ -342,6 +436,9 @@ def bt_trainer(config):
 if __name__ == "__main__":
     # gather arguments 
     args = get_args_from_config()
+    args.training.datadir = args.training.datadir.format(dataset=args.training.dataset)
+    args.training.train_dataset = args.training.train_dataset.format(dataset=args.training.dataset)
+    args.training.val_dataset = args.training.val_dataset.format(dataset=args.training.dataset)
 
     # train model 
     start_time = time.time()
@@ -349,4 +446,4 @@ if __name__ == "__main__":
 
     # wrapup experiments with logging key variables
     print(f'Total time: {time.time() - start_time:.5f}')
-    print(f'Models saved to {args.training.ckpt_dir}')
+    print(f'Results saved to {args.training.ckpt_dir}')
