@@ -5,25 +5,18 @@
 * SSL : Seems like FP32 is important for good performance.
     * 
 """
-from typing import List 
-
-from ffcv.fields import IntField, RGBImageField
+from typing import List
 from ffcv.fields.decoders import IntDecoder, SimpleRGBImageDecoder
 from ffcv.loader import Loader, OrderOption
 from ffcv.pipeline.operation import Operation
-import numpy as np
-import torch
-import torchvision.transforms as tvt
-from ffcv.transforms import RandomResizedCrop, RandomHorizontalFlip, Cutout, \
-    RandomTranslate, Convert, ToDevice, ToTensor, ToTorchImage
+from ffcv.transforms import Convert, ToDevice, ToTensor, ToTorchImage
 from ffcv.transforms.common import Squeeze
 
-from fastssl.data.cifar_transforms import CifarTransform, CifarClassifierTransform, SSLPT_CIFAR, ReScale
+from fastssl.data.custom_transforms import CifarTransform, CifarClassifierTransform, SSLPT_CIFAR, ReScale
 
 import torch
 from torch.utils.data import DataLoader
 import torchvision
-import torchvision.transforms as transforms
 
 def to_device(device):
     if device == 'cuda:0':

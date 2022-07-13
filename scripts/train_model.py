@@ -29,12 +29,12 @@ from torch.cuda.amp import GradScaler, autocast
 from torch.nn import CrossEntropyLoss
 from torch.optim import Adam, SGD, lr_scheduler
 
-import torchvision
 from tqdm import tqdm
 
 from fastargs import Section, Param
 
-from fastssl.data import cifar_ffcv, cifar_classifier_ffcv, cifar_pt, stl10_pt, stl_classifier_ffcv
+from fastssl.data import cifar_ffcv, cifar_classifier_ffcv, cifar_pt, stl10_pt, stl_classifier_ffcv, \
+    get_ssltrain_imagenet_ffcv_dataloaders, get_sseval_imagenet_ffcv_dataloaders, get_ssltrain_imagenet_pytorch_dataloaders
 from fastssl.models import barlow_twins as bt
 from fastssl.utils.base import set_seeds, get_args_from_config, merge_with_args
 import fastssl.utils.powerlaw as powerlaw
@@ -57,7 +57,7 @@ Section('training', 'Fast CIFAR-10 training').params(
     weight_decay=Param(
         float, 'weight_decay', default=1e-6),
     lambd=Param(
-        float, 'lambd', default=1/128),
+        float, 'lambd', default=5e-3),
     seed=Param(
         int, 'seed', default=1),
     algorithm=Param(
@@ -65,9 +65,9 @@ Section('training', 'Fast CIFAR-10 training').params(
     model=Param(
         str, 'model to train', default='resnet50proj'),
     num_workers=Param(
-        int, 'num of CPU workers', default=4),
+        int, 'num of CPU workers', default=3),
     projector_dim=Param(
-        int, 'projector dimension', default=128),
+        int, 'projector dimension', default=4096),
     log_interval=Param(
         int, 'log-interval in terms of epochs', default=20),
     ckpt_dir=Param(
@@ -117,6 +117,18 @@ def build_dataloaders(
                 # splits=["train", "test"],
                 # batch_size=batch_size,
                 # num_workers=num_workers)
+    elif dataset == 'imagenet':
+        if algorithm == 'ssl':
+            # return get_ssltrain_imagenet_ffcv_dataloaders(
+            #     train_dataset, batch_size, num_workers
+            # )
+            return get_ssltrain_imagenet_pytorch_dataloaders(
+                datadir, batch_size, num_workers
+            )
+        elif algorithm == 'linear':
+            return get_sseval_imagenet_ffcv_dataloaders(
+                train_dataset, val_dataset, batch_size, num_workers
+            )
 
 
 def gen_ckpt_path(args, train_algorithm='ssl', epoch=100, prefix='exp', suffix='pth'):
@@ -152,6 +164,12 @@ def build_model(args=None):
         model_cls = bt.BarlowTwins
     
     elif training.algorithm == 'linear':
+        if training.dataset == 'cifar10':
+            num_classes = 10
+        elif training.dataset == 'stl10':
+            num_classes = 100
+        elif training.dataset == 'imagenet':
+            num_classes = 1000
         ckpt_path = gen_ckpt_path(
             training,
             train_algorithm=args.eval.train_algorithm,
@@ -161,7 +179,7 @@ def build_model(args=None):
             'ckpt_path': ckpt_path,
             'dataset': training.dataset,
             'feat_dim': 2048,  # args.projector_dim
-            'num_classes': 10 if training.dataset in 'cifar10' else 100,
+            'num_classes': num_classes,
         }
         model_cls = bt.LinearClassifier
 
@@ -314,7 +332,7 @@ def train(model, loaders, optimizer, loss_fn, args):
         scaler = GradScaler()
     else:
         scaler = None
-    
+
     for epoch in range(1, EPOCHS+1):
         train_loss = train_step(
             model=model,
@@ -380,6 +398,7 @@ def run_experiment(args):
     np.save(save_path,results)
 
 
+
 def bt_trainer(config):
     """
     Trainer class compatible with the ray api.
@@ -395,7 +414,8 @@ if __name__ == "__main__":
     args.training.train_dataset = args.training.train_dataset.format(dataset=args.training.dataset)
     args.training.val_dataset = args.training.val_dataset.format(dataset=args.training.dataset)
 
-    # train model 
+    # train model
+
     start_time = time.time()
     run_experiment(args)
 

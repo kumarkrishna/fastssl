@@ -17,7 +17,7 @@ from ffcv.transforms import RandomResizedCrop, RandomHorizontalFlip, Cutout, \
     RandomTranslate, Convert, ToDevice, ToTensor, ToTorchImage
 from ffcv.transforms.common import Squeeze
 
-from fastssl.data.cifar_transforms import STLTransform, SSLPT_STL, ReScale, STLClassifierTransform
+from fastssl.data.custom_transforms import STLTransform, SSLPT_STL, ReScale, STLClassifierTransform
 
 import torch
 from torch.utils.data import DataLoader

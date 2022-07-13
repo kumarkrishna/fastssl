@@ -32,10 +32,6 @@ class BackBone(nn.Module):
     
     def build_projector(self, projector_dim):
         projector = [
-            # nn.Linear(2048, 512, bias=False),
-            # nn.BatchNorm1d(512),
-            # nn.ReLU(inplace=True),
-            # nn.Linear(512, projector_dim, bias=True),
             nn.Linear(2048, projector_dim, bias=False),
             nn.BatchNorm1d(projector_dim),
             nn.ReLU(inplace=True),
@@ -51,6 +47,8 @@ class BackBone(nn.Module):
             return self._check_valid_layer_cifar10(module)
         elif 'stl' in dataset:
             return self._check_valid_layer_stl10(module)
+        elif 'imagenet' in dataset:
+            return self._check_valid_layer_imagenet(module)
         else:
             raise NotImplementedError
     
@@ -60,6 +58,11 @@ class BackBone(nn.Module):
         return False
 
     def _check_valid_layer_stl10(self, module):
+        if not isinstance(module, nn.Linear) and not isinstance(module, nn.MaxPool2d):
+           return True
+        return False
+
+    def _check_valid_layer_imagenet(self, module):
         if not isinstance(module, nn.Linear) and not isinstance(module, nn.MaxPool2d):
            return True
         return False

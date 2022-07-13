@@ -12,6 +12,8 @@ For each checkpoint, we will:
         - accuracy vs alpha
 """
 
+import os
+
 class Report():
     super().__init__()
     def __init__(self, ckpt_dir, epoch_range=(1, 100), metrics=None):
@@ -29,13 +31,13 @@ class Report():
                 checkpoints.append(ckpt)
         return checkpoints
 
-    def load_model():
+    def load_model(self):
         """
         Load the model.
         """
         pass
 
-    def eval_classifier():
+    def eval_classifier(self):
         """
         Evaluate the linear classifier.
         """
