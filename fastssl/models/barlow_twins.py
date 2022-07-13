@@ -123,10 +123,10 @@ class LinearClassifier(nn.Module):
         
 
     def forward(self, x):
-        if self.bkey == 'resnet50proj':
+        if 'proj' in self.bkey:
             # WE WANT TO FORWARD PROPAGATE THROUGH self.backbone() FIRST??
             feats = self.backbone.proj(x)
-        elif self.bkey == 'resnet50feat':
+        elif 'feat' in self.bkey:
             feats = self.backbone(x)
         feats = torch.flatten(feats, start_dim=1)
         preds = self.fc(feats)
