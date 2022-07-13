@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from fastssl.models.ssl import NonContrastiveSSL
+from fastssl.models.ssl import SSL
 from fastssl.models.backbone import BackBone
 
 
@@ -50,14 +50,19 @@ def BarlowTwinLoss(model, inp, _lambda=None):
     return loss
 
 
-class BarlowTwins(NonContrastiveSSL):
+class BarlowTwins(SSL):
     """
     Modified ResNet50 architecture to work with CIFAR10
     """
-    def __init__(self, bkey='resnet50proj', feat_dim=128, dataset='cifar10'):
-        super(BarlowTwins, self).__init__(
-            bkey=bkey, feat_dim=feat_dim, dataset=dataset)
-        
+    def __init__(self, bkey='resnet50proj', projector_dim=128, dataset='cifar10'):
+        super(BarlowTwins, self).__init__()
+        self.projector_dim = projector_dim
+        self.dataset = dataset 
+        self.bkey = bkey
+
+        self.backbone = BackBone(
+            name=self.bkey, dataset=self.dataset, projector_dim=self.projector_dim)
+    
     def forward(self, x):
         projections = self._unnormalized_project(x)
         return F.normalize(projections, dim=-1)
@@ -67,28 +72,11 @@ class BarlowTwins(NonContrastiveSSL):
         projections = self.backbone.proj(feats)
         return projections
 
-
-class Featurize(BarlowTwins):
-    def __init__(self, dataset, bkey, feat_dim):
-        super(Featurize, self).__init__(
-            bkey=bkey, feat_dim=feat_dim, dataset=dataset)
-
-    def load_backbone(self, ckpt_path, requires_grad=False):
-        if ckpt_path is not None:
-            ## map location cpu
-            self.load_state_dict(torch.load(ckpt_path, map_location="cpu"), strict=False)
-            print("Loaded pretrained weights from {}".format(ckpt_path))
-        
-        for param in self.backbone.parameters():
-            param.requires_grad = requires_grad
-        
-    def forward(self, x):
-        if self.bkey == 'resnet50proj':
-            feats = self.backbone.project(x)
-        elif self.bkey == 'resnet50feat':
-            feats = self.backbone.features(x)
-        feats = torch.flatten(feats, start_dim=1)
+    def _unnormalized_feats(self, x):
+        x = self.backbone(x)
+        feats = torch.flatten(x, start_dim=1)
         return feats
+    
 
 
 class LinearClassifier(nn.Module):
@@ -135,9 +123,10 @@ class LinearClassifier(nn.Module):
         
 
     def forward(self, x):
-        if self.bkey == 'resnet50proj':
+        if 'proj' in self.bkey:
+            # WE WANT TO FORWARD PROPAGATE THROUGH self.backbone() FIRST??
             feats = self.backbone.proj(x)
-        elif self.bkey == 'resnet50feat':
+        elif 'feat' in self.bkey:
             feats = self.backbone(x)
         feats = torch.flatten(feats, start_dim=1)
         preds = self.fc(feats)
