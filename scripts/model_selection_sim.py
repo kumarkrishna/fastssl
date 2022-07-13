@@ -12,9 +12,8 @@ plot_abs = False
 flag_debug = False
 calc_new_alpha = True
 R2_thresh = 0.95
-dataset_ssl = 'stl10'
+dataset_ssl = 'cifar10'
 dataset_classifier = 'cifar10'
-
 ckpt_dir = 'checkpoints_design_hparams_{}'.format(dataset_ssl)
 
 def stringer_get_powerlaw(ss, trange):
@@ -48,6 +47,135 @@ def plot_alpha_fit(data_dict,trange,lamda_val,pdim_val):
 	plt.loglog(np.arange(1,1+200),ypred[:200])
 	plt.title("lamda = {:.2e}, pdim = {}, alpha={:.3f}".format(lamda_val,pdim_val,al))
 	plt.show()
+
+def retrieve_from_dict(sequence_dict,idx):
+	return sequence_dict[idx]
+
+def simulate_model_selection(pdim_arr,lamda_arr,alpha_dict,accuracy_dict):
+	alpha_sequence_dict = {}
+	pdim_sequence_dict = {}
+	lamda_sequence_dict = {}
+	accuracy_sequence_dict = {}
+	model_idx = 0
+	for pidx,pdim in enumerate(pdim_arr):
+		for lidx,lamda in enumerate(lamda_arr):
+			try:
+				if type(alpha_dict[pdim][lamda]) is list:
+					curr_alpha = np.mean(np.array(alpha_dict[pdim][lamda]))
+				else:
+					curr_alpha = alpha_dict[pdim][lamda]
+				if type(accuracy_dict[pdim][lamda]) is list:
+					curr_accuracy = np.mean(np.array(accuracy_dict[pdim][lamda]))
+				else:
+					curr_accuracy = accuracy_dict[pdim][lamda]
+				alpha_sequence_dict[model_idx] = curr_alpha
+				accuracy_sequence_dict[model_idx] = curr_accuracy
+				lamda_sequence_dict[model_idx] = lamda
+				pdim_sequence_dict[model_idx] = pdim
+				model_idx += 1
+			except:
+				pass
+	
+	total_models = model_idx
+	best_accuracy = np.array([val for key,val in accuracy_sequence_dict.items()]).max()
+
+	hparam_search_repeats = 1000
+	parallel_models = 10
+	eval_prob_arr_repeats = []
+	total_linear_evals_repeats = []
+	num_correct_search = 0 
+	search_tolerance = 1 	# setting tolerance to 1%
+	error_in_best_model_search = 0
+	max_error_in_best_model_search = 0
+
+	for ridx in tqdm(range(hparam_search_repeats)):
+		np.random.seed(ridx)
+		random_shuffle_order = np.random.permutation(total_models)
+		alpha_min = 0 
+		alpha_max = 10000
+		total_linear_evals = []
+		alpha_log_arr = []
+		accuracy_log_arr = []
+		eval_prob_arr = []
+		search_step_indices = np.arange(parallel_models,total_models,parallel_models)
+		if search_step_indices[-1]!= total_models:
+			search_step_indices = np.append(search_step_indices,total_models)
+		search_step_indices = np.insert(search_step_indices,0,0)
+		for m in np.arange(1,len(search_step_indices)):
+			model_indices = random_shuffle_order[search_step_indices[m-1]:search_step_indices[m]]
+			curr_alpha_arr = np.array([retrieve_from_dict(alpha_sequence_dict,i) for i in model_indices])
+			compare_idx = np.logical_and(curr_alpha_arr>=alpha_min,curr_alpha_arr<=alpha_max) 	# check which models have alpha in range [alpha_min, alpha_max]
+			# good models indices
+			good_model_indices = model_indices[compare_idx]
+			# add good model alphas to alpha_log_arr
+			alpha_log_arr.extend(curr_alpha_arr[compare_idx])
+			# add good model accuracies to accuracy_log_arr
+			accuracy_log_arr.extend([retrieve_from_dict(accuracy_sequence_dict,i) for i in good_model_indices])
+			# Count of linear evals increased
+			if len(total_linear_evals)==0:
+				total_linear_evals.append(compare_idx.sum())
+			else:
+				total_linear_evals.append(total_linear_evals[-1]+compare_idx.sum())
+			eval_prob_arr.append(compare_idx.sum()/parallel_models)
+			# breakpoint()
+			# update alpha_min and alpha_max
+			# Step 1: find the top k models, k = parallel_models//2 here but can be set to some other number
+			curr_accuracy_arr_np = np.array(accuracy_log_arr)
+			sort_idx = np.argsort(curr_accuracy_arr_np)
+			top_k_models = sort_idx[-int(parallel_models//2):]
+			# Step 2: Sort the alpha log array
+			curr_alpha_arr_np = np.array(alpha_log_arr)
+			alpha_sort_idx = np.argsort(curr_alpha_arr_np)
+			# Step 3: Go over the sorted alpha array and find alpha_min and alpha_max
+			top_model_flag_arr = [accuracy_log_arr[idx] in curr_accuracy_arr_np[top_k_models] for idx in alpha_sort_idx]
+			# breakpoint()
+			true_idx = [idx for (idx,item) in enumerate(top_model_flag_arr) if item==True]
+			if true_idx[0]!=0:
+				alpha_min = alpha_log_arr[alpha_sort_idx[true_idx[0]]]
+			if true_idx[-1]!=len(top_model_flag_arr)-1:
+				alpha_max = alpha_log_arr[alpha_sort_idx[true_idx[-1]]]
+		eval_prob_arr_repeats.append(eval_prob_arr)
+		total_linear_evals_repeats.append(total_linear_evals)
+		best_model_accuracy = np.array(accuracy_log_arr).max()
+		num_correct_search += (best_accuracy-best_model_accuracy)<=search_tolerance
+		error_in_best_model_search += (best_accuracy-best_model_accuracy)
+		if (best_accuracy-best_model_accuracy)>max_error_in_best_model_search:
+			max_error_in_best_model_search = (best_accuracy-best_model_accuracy)
+
+	# print(eval_prob_arr,total_linear_evals)
+	# print(np.array(accuracy_log_arr).max())
+	# all_accuracies = np.array([val for key,val in accuracy_sequence_dict.items()])
+	# print(all_accuracies.max())
+	eval_prob_arr_repeats = np.array(eval_prob_arr_repeats)
+	total_linear_evals_repeats = np.array(total_linear_evals_repeats)
+	avg_linear_evals = total_linear_evals_repeats.mean()
+	mean_eval_prob_arr_repeats = np.mean(eval_prob_arr_repeats,axis=0)
+	std_eval_prob_arr_repeats = np.std(eval_prob_arr_repeats,axis=0)
+	mean_total_linear_evals_repeats = np.mean(total_linear_evals_repeats,axis=0)
+	std_total_linear_evals_repeats = np.std(total_linear_evals_repeats,axis=0)
+
+	print("Probability of correct model accuracy:",num_correct_search/hparam_search_repeats)
+	print("Mean error in best accuracy search:",error_in_best_model_search/hparam_search_repeats)
+	print("Max error in best accuracy search:",max_error_in_best_model_search)
+	print("Expected Number of linear evals:",avg_linear_evals)
+
+	plt.figure()
+	plt.errorbar(x=np.arange(1,1+mean_eval_prob_arr_repeats.shape[0]),y=mean_eval_prob_arr_repeats,yerr=std_eval_prob_arr_repeats,label='Empirical probability')
+	plt.plot(np.arange(1,1+mean_eval_prob_arr_repeats.shape[0]),1./np.arange(1,1+mean_eval_prob_arr_repeats.shape[0]),label=r'$\frac{1}{steps}$ decay',ls='--')
+	plt.grid('on')
+	plt.xlabel('Sequential steps')
+	plt.ylabel('Linear eval probability')
+	plt.legend()
+
+	plt.figure()
+	plt.errorbar(x=np.arange(1,1+mean_total_linear_evals_repeats.shape[0]),y=mean_total_linear_evals_repeats,yerr=std_total_linear_evals_repeats,label=r'$\alpha$-based filtering')
+	plt.plot(np.arange(1,1+mean_total_linear_evals_repeats.shape[0]),parallel_models*np.arange(1,1+mean_total_linear_evals_repeats.shape[0]),label='No filtering')
+	plt.grid('on')
+	plt.xlabel('Sequential steps')
+	plt.ylabel('Total number of linear evals')
+	plt.legend()
+	plt.show()
+
 
 
 def plot_colorplot(pdim_arr,lamda_arr,attribute_dict,attribute_label,vmin=None,vmax=None,cmap='seismic'):
@@ -122,6 +250,7 @@ for fidx,file in enumerate(tqdm(files_sorted)):
 	try:
 		lamda_val = float(os.path.basename(file).split('lambd_')[-1].split('_')[0])
 		pdim_val = float(os.path.basename(file).split('pdim_')[-1].split('_')[0])
+		# if lamda_val <= 1e-6: continue
 		lamda_arr[lamda_val]=True
 		pdim_arr[pdim_val]=True
 		if pdim_val not in accuracy_dict.keys():
@@ -137,8 +266,12 @@ for fidx,file in enumerate(tqdm(files_sorted)):
 		if pdim_val not in R2_100_dict.keys():
 			R2_100_dict[pdim_val] = {}
 		SSL_fname = os.path.join(file,'results_{}_early_alpha_ssl_100.npy'.format(dataset_ssl))
-		SSL_file = np.load(SSL_fname,allow_pickle=True).item()
-		SSL_loss_dict[pdim_val][lamda_val] = np.log(SSL_file['train_loss'][-1])/pdim_val
+		if os.path.exists(SSL_fname): 
+			SSL_file = np.load(SSL_fname,allow_pickle=True).item()
+			SSL_loss_dict[pdim_val][lamda_val] = np.log(SSL_file['train_loss'][-1])/pdim_val
+		else:
+			SSL_loss_dict[pdim_val][lamda_val] = np.nan
+
 		linear_files = glob.glob(os.path.join(file,'results_{}_early_alpha_linear_200*'.format(dataset_classifier)))
 		for linear_fname in linear_files:
 			# linear_fname = os.path.join(file,'results_{}_early_alpha_linear_200.npy'.format(dataset))
@@ -186,25 +319,29 @@ for fidx,file in enumerate(tqdm(files_sorted)):
 		pass
 
 
-lamda_arr = np.array(list(lamda_arr.keys()))
-pdim_arr = np.array(list(pdim_arr.keys()))
-plot_colorplot(pdim_arr,lamda_arr,accuracy_dict,"Final accuracy",cmap='coolwarm',vmin=70,vmax=85 if dataset_ssl!=dataset_classifier in dataset_classifier else 90)
-plot_colorplot(pdim_arr,lamda_arr,alpha_dict,r"$|1-\alpha|$" if plot_abs else r"$\alpha$",cmap='coolwarm_r',vmax=1.2 if plot_abs else 2.2)
-plot_colorplot(pdim_arr,lamda_arr,R2_100_dict,r"$R^2$ (top 100)",cmap='coolwarm',vmin=0.90)
-plot_colorplot(pdim_arr,lamda_arr,SSL_loss_dict,"SSL loss (log)",cmap='coolwarm_r')#,vmax=6000)
-plot_scatterplot(alpha_dict,r"$|1-\alpha|$" if plot_abs else r"$\alpha$",accuracy_dict,"Final accuracy",filter_dict=R2_100_dict,vmin=70,vmax=85 if dataset_ssl!=dataset_classifier in dataset_classifier else 90,
-																																hmax=2 if 'stl' in dataset_classifier else 2.2)
-if plot_abs:
-	plt.axvline(x=0.0,color='k',ls='--')
-	lim_min,lim_max = plt.xlim()
-	if lim_min>-0.05: lim_min = -0.05
-else:
-	plt.axvline(x=1.0,color='k',ls='--')
-	plt.axvline(x=0.8,color='k',ls=':')
-	lim_min,lim_max = plt.xlim()
-	if lim_min>0.95: lim_min = 0.95
-plt.xlim([lim_min,lim_max])
-plt.show()
+lamda_arr = np.sort(np.array(list(lamda_arr.keys())))
+pdim_arr = np.sort(np.array(list(pdim_arr.keys())))
+print(lamda_arr)
+simulate_model_selection(pdim_arr=pdim_arr,lamda_arr=lamda_arr,alpha_dict=alpha_dict,accuracy_dict=accuracy_dict)
+# plot_colorplot(pdim_arr,lamda_arr,accuracy_dict,"Final accuracy",cmap='coolwarm',vmin=70,vmax=85 if dataset_ssl!=dataset_classifier in dataset_classifier else 90)
+# plot_colorplot(pdim_arr,lamda_arr,alpha_dict,r"$|1-\alpha|$" if plot_abs else r"$\alpha$",cmap='coolwarm_r',vmax=1.2 if plot_abs else 2.2)
+# plot_colorplot(pdim_arr,lamda_arr,R2_100_dict,r"$R^2$ (top 100)",cmap='coolwarm',vmin=0.90)
+# plot_colorplot(pdim_arr,lamda_arr,SSL_loss_dict,"SSL loss (log)",cmap='coolwarm_r')#,vmax=6000)
+# plot_scatterplot(alpha_dict,r"$|1-\alpha|$" if plot_abs else r"$\alpha$",accuracy_dict,"Final accuracy",filter_dict=R2_100_dict,vmin=70,vmax=85 if dataset_ssl!=dataset_classifier in dataset_classifier else 90,
+# 																																hmax=2 if 'stl' in dataset_classifier else 2.2)
+# if plot_abs:
+# 	plt.axvline(x=0.0,color='k',ls='--')
+# 	lim_min,lim_max = plt.xlim()
+# 	if lim_min>-0.05: lim_min = -0.05
+# else:
+# 	plt.axvline(x=1.0,color='k',ls='--')
+# 	plt.axvline(x=0.8,color='k',ls=':')
+# 	lim_min,lim_max = plt.xlim()
+# 	if lim_min>0.95: lim_min = 0.95
+# plt.xlim([lim_min,lim_max])
+# plt.show()
+
+
 
 # accuracy_arr = np.array(accuracy_arr)
 # alpha_mean_arr = np.array(alpha_mean_arr)

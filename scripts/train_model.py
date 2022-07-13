@@ -20,10 +20,8 @@ import numpy as np
 import os
 
 from pathlib import Path
-import pickle
-from ray import tune
 
-import time
+import time, copy
 import torch
 from torch.cuda.amp import GradScaler, autocast
 from torch.nn import CrossEntropyLoss
@@ -35,7 +33,8 @@ from fastargs import Section, Param
 
 from fastssl.data import cifar_ffcv, cifar_classifier_ffcv, cifar_pt, stl10_pt, stl_classifier_ffcv, \
     get_ssltrain_imagenet_ffcv_dataloaders, get_sseval_imagenet_ffcv_dataloaders, get_ssltrain_imagenet_pytorch_dataloaders
-from fastssl.models import barlow_twins as bt
+from fastssl.models import barlow_twins, byol #, simclr
+
 from fastssl.utils.base import set_seeds, get_args_from_config, merge_with_args
 import fastssl.utils.powerlaw as powerlaw
 
@@ -57,7 +56,9 @@ Section('training', 'Fast CIFAR-10 training').params(
     weight_decay=Param(
         float, 'weight_decay', default=1e-6),
     lambd=Param(
-        float, 'lambd', default=5e-3),
+        float, 'lambd for BarlowTwins', default=5e-3),
+    momentum_tau=Param(
+        float, 'momentum_tau for BYOL', default=0.01),
     seed=Param(
         int, 'seed', default=1),
     algorithm=Param(
@@ -67,7 +68,9 @@ Section('training', 'Fast CIFAR-10 training').params(
     num_workers=Param(
         int, 'num of CPU workers', default=3),
     projector_dim=Param(
-        int, 'projector dimension', default=4096),
+        int, 'projector dimension', default=128),
+    hidden_dim=Param(
+        int, 'hidden dimension for BYOL projector', default=128),
     log_interval=Param(
         int, 'log-interval in terms of epochs', default=20),
     ckpt_dir=Param(
@@ -93,18 +96,18 @@ def build_dataloaders(
     batch_size=128,
     num_workers=2):
     if 'cifar' in dataset:
-        if algorithm == 'ssl':
+        if algorithm in ('BarlowTwins', 'SimCLR', 'ssl', 'byol'):
             return cifar_pt(
-                datadir, batch_size=batch_size, num_workers=num_workers)
-            # for ffcv cifar10 dataloader
-            # return cifar_ffcv(
-            #     train_dataset, val_dataset, batch_size, num_workers)
+                datadir, batch_size=batch_size, num_workers=num_workers
+            )
         elif algorithm == 'linear':
             # dataloader for classifier
             return cifar_classifier_ffcv(
                 train_dataset, val_dataset, batch_size, num_workers)
+        else:
+            raise Exception("Algorithm not implemented")
     elif dataset == 'stl10':
-        if algorithm == 'ssl':
+        if algorithm in ('BarlowTwins', 'SimCLR', 'ssl', 'byol'):
             return stl10_pt(
                 datadir,
                 splits=["unlabeled"],
@@ -113,10 +116,6 @@ def build_dataloaders(
         elif algorithm == 'linear':
             return stl_classifier_ffcv(
                 train_dataset, val_dataset, batch_size, num_workers)
-                # datadir,
-                # splits=["train", "test"],
-                # batch_size=batch_size,
-                # num_workers=num_workers)
     elif dataset == 'imagenet':
         if algorithm == 'ssl':
             # return get_ssltrain_imagenet_ffcv_dataloaders(
@@ -129,6 +128,8 @@ def build_dataloaders(
             return get_sseval_imagenet_ffcv_dataloaders(
                 train_dataset, val_dataset, batch_size, num_workers
             )
+    else:
+        raise Exception("Algorithm not implemented")
 
 
 def gen_ckpt_path(args, train_algorithm='ssl', epoch=100, prefix='exp', suffix='pth'):
@@ -137,6 +138,11 @@ def gen_ckpt_path(args, train_algorithm='ssl', epoch=100, prefix='exp', suffix='
         ckpt_dir = main_dir
     else:
         main_dir = args.ckpt_dir
+        if 'shallow' in args.model:
+            model_name = args.model
+            model_name = model_name.replace('proj','')
+            model_name = model_name.replace('feat','')
+            main_dir = os.path.join(main_dir,model_name)
         ckpt_dir = os.path.join(
             main_dir, 'lambd_{:.6f}_pdim_{}{}_lr_{}_wd_{}'.format(args.lambd, args.projector_dim,'_no_autocast' if not args.use_autocast else '',
                                                                 args.lr, args.weight_decay))
@@ -155,13 +161,19 @@ def build_model(args=None):
     """
     training = args.training
 
-    if training.algorithm == 'ssl':
+    if training.algorithm in ('BarlowTwins', 'SimCLR', 'ssl', 'byol'):
         model_args = {
             'bkey': training.model,
             'dataset': training.dataset,
             'projector_dim': training.projector_dim,
             }
-        model_cls = bt.BarlowTwins
+        
+        if training.algorithm in ('byol', 'SimCLR'):
+            model_args['hidden_dim'] = training.hidden_dim
+            model_cls = byol.BYOL
+        else:
+            model_args['hidden_dim'] = training.projector_dim
+            model_cls = barlow_twins.BarlowTwins
     
     elif training.algorithm == 'linear':
         if training.dataset == 'cifar10':
@@ -179,9 +191,9 @@ def build_model(args=None):
             'ckpt_path': ckpt_path,
             'dataset': training.dataset,
             'feat_dim': 2048,  # args.projector_dim
-            'num_classes': num_classes,
-        }
-        model_cls = bt.LinearClassifier
+            'num_classes': num_classes}
+
+        model_cls = barlow_twins.LinearClassifier
 
     model = model_cls(**model_args)
     model = model.to(memory_format=torch.channels_last).cuda()
@@ -189,8 +201,10 @@ def build_model(args=None):
 
 
 def build_loss_fn(args=None):
-    if args.algorithm == 'ssl':
-        return partial(bt.BarlowTwinLoss, _lambda=args.lambd)
+    if args.algorithm in ('BarlowTwins', 'ssl'):
+        return partial(barlow_twins.BarlowTwinLoss, _lambda=args.lambd)
+    elif args.algorithm == 'byol':
+        return byol.BYOLLoss
     elif args.algorithm == 'linear':
         def classifier_xent(model, inp):
             x, y = inp
@@ -198,6 +212,8 @@ def build_loss_fn(args=None):
             logits = model(x)
             return CrossEntropyLoss(label_smoothing=0.1)(logits, y)
         return classifier_xent
+    else:
+        raise Exception('Algorithm {} not implemented'.format(args.algorithm))
 
 
 def build_optimizer(model, args=None):
@@ -210,19 +226,22 @@ def build_optimizer(model, args=None):
     Returns:
         optimizer : optimizer for training model
     """
-    if args.algorithm == 'ssl':
+    if args.algorithm in ('BarlowTwins', 'SimCLR', 'ssl', 'byol'):
         return Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     elif args.algorithm == 'linear':
         default_lr = 1e-3
         default_weight_decay = 1e-6
         return Adam(model.parameters(), lr=default_lr, weight_decay=default_weight_decay)
+    else:
+        raise Exception('Algorithm not implemented')
 
-def train_step(model, dataloader, optimizer=None, loss_fn=None, scaler=None, epoch=None, epochs=None):
+def train_step(model, dataloader, args, target_model=None, optimizer=None, loss_fn=None, scaler=None, epoch=None):
     """
     Generic trainer.
 
     Args:
         model : 
+        target_model: Not None if BYOL
         dataloader :
         optimizer :
         loss_fn:
@@ -244,7 +263,12 @@ def train_step(model, dataloader, optimizer=None, loss_fn=None, scaler=None, epo
         ## forward   
         if scaler:
             with autocast():
-                loss = loss_fn(model, inp)
+                if args.algorithm == 'byol':
+                    loss = loss_fn(model, target_model, inp)
+                elif args.algorithm in ('BarlowTwins', 'SimCLR', 'ssl', 'linear'):
+                    loss = loss_fn(model, inp)
+                else:
+                    raise Exception('Algorithm not implemented')
             scaler.scale(loss).backward()
             scaler.step(optimizer)
             scaler.update()
@@ -257,11 +281,11 @@ def train_step(model, dataloader, optimizer=None, loss_fn=None, scaler=None, epo
         total_loss += loss.item() 
         num_batches += 1
 
-        import ray
-        if ray.tune.is_session_enabled():
-            tune.report(epoch=epoch, loss=total_loss/num_batches)
+        if args.algorithm == 'byol':
+            byol.update_state_dict(target_model, model.state_dict(), args.momentum_tau)
+
         train_bar.set_description(
-            'Train Epoch: [{}/{}] Loss: {:.4f}'.format(epoch, epochs, total_loss / num_batches))
+            'Train Epoch: [{}/{}] Loss: {:.4f}'.format(epoch, args.epochs, total_loss / num_batches))
     return total_loss / num_batches
 
 def eval_step(model, dataloader, epoch=None, epochs=None):
@@ -298,7 +322,6 @@ def debug_plot(activations_eigen,alpha,ypred,R2,R2_100,figname):
 
 def train(model, loaders, optimizer, loss_fn, args):
     results = {'train_loss': [], 'test_acc_1': [], 'test_acc_5': []}
-    EPOCHS = args.epochs
     
     if args.algorithm == 'linear':
         if args.use_autocast:
@@ -328,23 +351,32 @@ def train(model, loaders, optimizer, loss_fn, args):
             results['alpha_arr'] = alpha_arr
             results['R2_arr'] = R2_arr
             results['R2_100_arr'] = R2_100_arr
+
     if args.use_autocast:
         scaler = GradScaler()
     else:
         scaler = None
 
-    for epoch in range(1, EPOCHS+1):
+    if args.algorithm == 'byol':
+        target_model = copy.deepcopy(model)
+        for param in (list(target_model.parameters())):
+            param.requires_grad = False
+
+    for epoch in range(1, args.epochs+1):
         train_loss = train_step(
             model=model,
             dataloader=loaders['train'],
+            target_model= target_model if args.algorithm == 'byol' else None,
             optimizer=optimizer,
             scaler=scaler,
-            loss_fn=loss_fn, epoch=epoch, epochs=EPOCHS)
+            loss_fn=loss_fn, 
+            epoch=epoch, 
+            args=args)
         
         results['train_loss'].append(train_loss)
 
         if args.algorithm == 'linear':
-            acc_1, acc_5 = eval_step(model, loaders['test'], epoch=epoch, epochs=EPOCHS)
+            acc_1, acc_5 = eval_step(model, loaders['test'], epoch=epoch, epochs=args.epochs)
             results['test_acc_1'].append(acc_1)
             results['test_acc_5'].append(acc_5)
         elif epoch % args.log_interval == 0:
@@ -398,7 +430,6 @@ def run_experiment(args):
     np.save(save_path,results)
 
 
-
 def bt_trainer(config):
     """
     Trainer class compatible with the ray api.
@@ -413,9 +444,6 @@ if __name__ == "__main__":
     args.training.datadir = args.training.datadir.format(dataset=args.training.dataset)
     args.training.train_dataset = args.training.train_dataset.format(dataset=args.training.dataset)
     args.training.val_dataset = args.training.val_dataset.format(dataset=args.training.dataset)
-
-    # train model
-
     start_time = time.time()
     run_experiment(args)
 

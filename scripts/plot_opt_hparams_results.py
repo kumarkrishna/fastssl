@@ -12,8 +12,10 @@ plot_abs = False
 flag_debug = False
 calc_new_alpha = True
 R2_thresh = 0.95
+
 dataset_ssl = 'cifar10'
 dataset_classifier = 'cifar10'
+
 ckpt_dir = 'checkpoints_opt_hparams_{}'.format(dataset_ssl)
 
 def stringer_get_powerlaw(ss, trange):
