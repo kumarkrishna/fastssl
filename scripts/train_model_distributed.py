@@ -11,14 +11,10 @@ python train_model.py --config-file configs/barlow_twins.yaml
 python train_model.py --config-file configs/cc_barlow_twins.yaml
 """
 
-from argparse import ArgumentParser
-from functools import partial
-from typing import List
 
+from functools import partial
 import numpy as np
 import os
-import argparse
-from pathlib import Path
 import signal
 import subprocess
 from argparse import Namespace
@@ -26,7 +22,6 @@ import time
 import torch
 from torch.cuda.amp import GradScaler, autocast
 from torch.nn import CrossEntropyLoss
-from torch.optim import Adam, SGD, lr_scheduler
 
 from tqdm import tqdm
 import sys
@@ -35,8 +30,8 @@ from torch import nn, optim
 
 from fastargs import Section, Param
 
-from fastssl.data import get_ssltrain_imagenet_pytorch_dataloaders_distributed
-from fastssl.models import barlow_twins as bt
+from fastssl.data import get_ssltrain_imagenet_pytorch_dataloaders_distributed, get_sseval_imagenet_ffcv_dataloaders
+import fastssl.models.barlow_twins as bt
 from fastssl.utils.base import set_seeds, get_args_from_config
 import fastssl.utils.powerlaw as powerlaw
 from fastssl.models.barlow_twins import off_diagonal
@@ -72,15 +67,17 @@ Section('training', 'Fast distributed imagenet training').params(
         int, 'num of CPU workers', default=3),
     projector_dim=Param(
         int, 'projector dimension', default=4096),
+    hidden_dim=Param(
+        int, 'hidden dimension', default=4096),
     log_interval=Param(
-        int, 'log-interval in terms of epochs', default=20),
+        int, 'log-interval in terms of epochs', default=1),
     ckpt_dir=Param(
         str, 'ckpt-dir', default='/data/krishna/research/results/0319/001/checkpoints'),
     use_autocast=Param(
         bool, 'autocast fp16', default=True),
 )
 
-Section('eval', 'Fast CIFAR-10 evaluation').params(
+Section('eval', 'Fast Imagenet evaluation').params(
     train_algorithm=Param(
         str, 'pretrain algo', default='ssl'),
     epoch=Param(
@@ -108,23 +105,6 @@ def build_dataloaders(
             )
 
 
-def gen_ckpt_path(args, train_algorithm='ssl', epoch=100, prefix='exp', suffix='pth'):
-    if suffix == 'pth':
-        main_dir = os.environ['SLURM_TMPDIR']
-        ckpt_dir = main_dir
-    else:
-        main_dir = args.ckpt_dir
-        ckpt_dir = os.path.join(
-            main_dir, 'lambd_{:.6f}_pdim_{}{}_lr_{}_wd_{}'.format(args.lambd, args.projector_dim,
-                                                                  '_no_autocast' if not args.use_autocast else '',
-                                                                  args.lr, args.weight_decay))
-    # create directory if it doesn't exist
-    Path(ckpt_dir).mkdir(parents=True, exist_ok=True)
-    # create ckpt file name
-    ckpt_path = os.path.join(ckpt_dir, '{}_{}_{}{}.{}'.format(
-        prefix, train_algorithm, epoch, '_seed_{}'.format(args.seed) if 'linear' in train_algorithm else '', suffix))
-    return ckpt_path
-
 
 def build_model(args=None):
     """
@@ -138,6 +118,7 @@ def build_model(args=None):
             'bkey': training.model,
             'dataset': training.dataset,
             'projector_dim': training.projector_dim,
+            'hidden_dim': training.hidden_dim
         }
         model_cls = bt.BarlowTwins
 
@@ -148,19 +129,16 @@ def build_model(args=None):
             num_classes = 100
         elif training.dataset == 'imagenet':
             num_classes = 1000
-        ckpt_path = gen_ckpt_path(
-            training,
-            train_algorithm=args.eval.train_algorithm,
-            epoch=args.eval.epoch)
         model_args = {
             'bkey': training.model,  # supports : resnet50feat, resnet50proj
-            'ckpt_path': ckpt_path,
+            'ckpt_path': args.ckpt_dir + f'/checkpoint_ssl.pth',
             'dataset': training.dataset,
             'feat_dim': 2048,  # args.projector_dim
             'num_classes': num_classes,
         }
         model_cls = bt.LinearClassifier
 
+    print(model_args, model_cls)
     model = model_cls(**model_args)
     model = model.to(memory_format=torch.channels_last)
     return model
@@ -217,12 +195,9 @@ def train_step(model, dataloader, optimizer=None, loss_fn=None, scaler=None, epo
         ## update loss
         total_loss += loss.item()
         num_batches += 1
-
-        # import ray
-        # if ray.tune.is_session_enabled():
-        #     tune.report(epoch=epoch, loss=total_loss / num_batches)
         train_bar.set_description(
             'Train Epoch: [{}/{}] Loss: {:.4f}'.format(epoch, epochs, total_loss / num_batches))
+
     return total_loss / num_batches
 
 
@@ -249,9 +224,8 @@ def eval_step(model, dataloader, epoch=None, epochs=None):
     return acc_1, acc_5
 
 
-def train(model, loaders, optimizer, loss_fn, args, gpu, sampler):
+def train(model, loaders, optimizer, loss_fn, args, gpu, sampler, start_epoch):
     results = {'train_loss': [], 'test_acc_1': [], 'test_acc_5': []}
-    EPOCHS = args.epochs
 
     if args.algorithm == 'linear':
         if args.use_autocast:
@@ -279,26 +253,33 @@ def train(model, loaders, optimizer, loss_fn, args, gpu, sampler):
     else:
         scaler = None
 
-    for epoch in range(1, EPOCHS + 1):
+    for epoch in range(start_epoch, args.epochs):
         sampler.set_epoch(epoch)
         train_loss = train_step(
             model=model,
             dataloader=loaders['train'],
             optimizer=optimizer,
             scaler=scaler,
-            loss_fn=loss_fn, epoch=epoch, epochs=EPOCHS, gpu=gpu)
+            loss_fn=loss_fn,
+            epoch=epoch,
+            epochs=args.epochs,
+            gpu=gpu)
 
         results['train_loss'].append(train_loss)
 
         if args.algorithm == 'linear':
-            acc_1, acc_5 = eval_step(model, loaders['test'], epoch=epoch, epochs=EPOCHS)
+            acc_1, acc_5 = eval_step(model, loaders['test'], epoch=epoch, epochs=args.epochs)
             results['test_acc_1'].append(acc_1)
             results['test_acc_5'].append(acc_5)
-        elif epoch % args.log_interval == 0:
-            ckpt_path = gen_ckpt_path(args, epoch=epoch)
-            torch.save(
-                model.state_dict(),
-                ckpt_path)
+
+        if epoch % args.log_interval == 0:
+            if args.rank == 0:
+                # save checkpoint
+                print('Checkpoint saved ..')
+                state = dict(epoch=epoch + 1, model=model.state_dict(),
+                             optimizer=optimizer.state_dict())
+                torch.save(state, args.ckpt_dir + f'/checkpoint_{args.algorithm}.pth')
+
     return results
 
 
@@ -315,10 +296,10 @@ def main_worker(gpu, train_args, eval_args):
 
     training = args.training
 
-    # if training.rank == 0:
-    #     training.ckpt_dir.mkdir(parents=True, exist_ok=True)
-    #     stats_file = open(training.ckpt_dir / 'stats.txt', 'a', buffering=1)
-    #     print(' '.join(sys.argv), file=stats_file)
+    if training.rank == 0:
+        os.makedirs(training.ckpt_dir, exist_ok=True)
+        stats_file = open(training.ckpt_dir + '/stats.txt', 'a', buffering=1)
+        print(' '.join(sys.argv), file=stats_file)
 
     torch.cuda.set_device(gpu)
     torch.backends.cudnn.benchmark = True
@@ -343,14 +324,15 @@ def main_worker(gpu, train_args, eval_args):
     print("CONSTRUCTED MODEL AND OPTIMIZER")
 
     # automatically resume from checkpoint if it exists
-    # if (args.checkpoint_dir / 'checkpoint.pth').is_file():
-    #     ckpt = torch.load(args.checkpoint_dir / 'checkpoint.pth',
-    #                       map_location='cpu')
-    #     start_epoch = ckpt['epoch']
-    #     model.load_state_dict(ckpt['model'])
-    #     optimizer.load_state_dict(ckpt['optimizer'])
-    # else:
-    #     start_epoch = 0
+    if os.path.isfile(training.ckpt_dir + f'/checkpoint_{training.algorithm}.pth'):
+        ckpt = torch.load(training.ckpt_dir + f'/checkpoint_{training.algorithm}.pth',
+                          map_location='cpu')
+        start_epoch = ckpt['epoch']
+        model.load_state_dict(ckpt['model'])
+        optimizer.load_state_dict(ckpt['optimizer'])
+        print('Training checkpoint loaded ..')
+    else:
+        start_epoch = 0
 
     ## Use FFCV to build dataloaders
     loaders, sampler = build_dataloaders(
@@ -370,14 +352,8 @@ def main_worker(gpu, train_args, eval_args):
     print("CONSTRUCTED LOSS FUNCTION")
 
     # train the model with default=BT
-    results = train(model, loaders, optimizer, loss_fn, training, gpu, sampler)
+    results = train(model, loaders, optimizer, loss_fn, training, gpu, sampler, start_epoch)
 
-    # save results
-    #save_path = gen_ckpt_path(training, training.algorithm, training.epochs,
-    #                          'results_{}_early_alpha'.format(training.dataset), 'npy')
-    # with open(save_path, 'wb') as f:
-    # pickle.dump(results, f)
-    #np.save(save_path, results)
 
 
 def BarlowTwinLoss(model, inp, gpu, _lambda=None):
