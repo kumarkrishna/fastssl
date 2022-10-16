@@ -7,7 +7,9 @@ import torch.nn.functional as F
 
 from fastssl.models.ssl import SSL
 from fastssl.models.backbone import BackBone
+from fastssl.data.cifar_transforms import CifarTransform
 
+ssl_transform = CifarTransform()
 
 def off_diagonal(x):
     # return a flattened view of the off-diagonal elements of a square matrix
@@ -32,7 +34,9 @@ def BarlowTwinLoss(model, inp, _lambda=None):
     (x1, x2), _ = inp
     x1, x2 = x1.cuda(non_blocking=True), x2.cuda(non_blocking=True)
     bsz = x1.shape[0]
-
+    # x,_ = inp
+    # x1,x2 = ssl_transform(x.cuda(non_blocking=True))
+    # bsz = x1.shape[0]
     
     # forward pass
     z1 = model(x1)
@@ -54,14 +58,19 @@ class BarlowTwins(SSL):
     """
     Modified ResNet50 architecture to work with CIFAR10
     """
-    def __init__(self, bkey='resnet50proj', feat_dim=128, dataset='cifar10'):
+    def __init__(self, bkey='resnet50proj', projector_dim=128, dataset='cifar10', hidden_dim=None):
         super(BarlowTwins, self).__init__()
-        self.feat_dim = feat_dim
+        self.projector_dim = projector_dim
+        if hidden_dim is None:
+            self.hidden_dim = projector_dim
+        else:
+            assert hidden_dim==projector_dim, "Implementation only for hidden_dim ({}) = projector_dim ({})".format(hidden_dim,projector_dim)
+            self.hidden_dim = hidden_dim
         self.dataset = dataset 
         self.bkey = bkey
 
         self.backbone = BackBone(
-            name=self.bkey, dataset=self.dataset, feat_dim=self.feat_dim)
+            name=self.bkey, dataset=self.dataset, projector_dim=self.projector_dim, hidden_dim=self.hidden_dim)
     
     def forward(self, x):
         projections = self._unnormalized_project(x)
@@ -123,9 +132,10 @@ class LinearClassifier(nn.Module):
         
 
     def forward(self, x):
-        if self.bkey == 'resnet50proj':
+        if 'proj' in self.bkey:
+            # WE WANT TO FORWARD PROPAGATE THROUGH self.backbone() FIRST??
             feats = self.backbone.proj(x)
-        elif self.bkey == 'resnet50feat':
+        elif 'feat' in self.bkey:
             feats = self.backbone(x)
         feats = torch.flatten(feats, start_dim=1)
         preds = self.fc(feats)

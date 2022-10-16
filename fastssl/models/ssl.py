@@ -1,14 +1,16 @@
 import torch
 import torch.nn as nn
-from fastssl.models.backbone import Backbone
+from fastssl.models.backbone import BackBone
 
 
-class NonContrastiveSSL(nn.Module):
+# class NonContrastiveSSL(nn.Module):
+class SSL(nn.Module):
     """
     Non-constrastive SSL model.
     """
     def __init__(self):
-        super(NonContrastiveSSL, self).__init__()
+        # super(NonContrastiveSSL, self).__init__()
+        super(SSL, self).__init__()
     
     def forward(self, x):
         raise NotImplementedError
