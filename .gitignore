@@ -4,6 +4,7 @@ dist/
 
 results/
 **/__pycache__/
+*__pycache__*
 checkpoints/
 old_checkpoints/
 checkpoints*/
