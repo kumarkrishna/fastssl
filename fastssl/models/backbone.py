@@ -27,13 +27,14 @@ class BackBone(nn.Module):
         if 'pred' in self.name:
             self.build_predictor(projector_dim=projector_dim)
 
-
     def _resnet50mod(self, dataset):
         backbone = []
         for name, module in resnet50().named_children():
             if name == 'conv1':
                 module = nn.Conv2d(
-                    3, 64, kernel_size=3, stride=1, padding=1, bias=False)
+                    3, 64, kernel_size=3, stride=1,
+                    padding=1, bias=False
+                )
             # check validity for adding layer to module
             if self.is_valid_layer(module, dataset):
                 backbone.append(module)
@@ -57,10 +58,6 @@ class BackBone(nn.Module):
     
     def build_projector(self, projector_dim, hidden_dim):
         projector = [
-            # nn.Linear(2048, 512, bias=False),
-            # nn.BatchNorm1d(512),
-            # nn.ReLU(inplace=True),
-            # nn.Linear(512, projector_dim, bias=True),
             nn.Linear(2048, hidden_dim, bias=False),
             nn.BatchNorm1d(hidden_dim),
             nn.ReLU(inplace=True),
@@ -87,6 +84,8 @@ class BackBone(nn.Module):
             return self._check_valid_layer_cifar10(module)
         elif 'stl' in dataset:
             return self._check_valid_layer_stl10(module)
+        elif 'imagenet' in dataset:
+            return self._check_valid_layer_imagenet(module)
         else:
             raise NotImplementedError
     
@@ -96,6 +95,11 @@ class BackBone(nn.Module):
         return False
 
     def _check_valid_layer_stl10(self, module):
+        if not isinstance(module, nn.Linear) and not isinstance(module, nn.MaxPool2d):
+           return True
+        return False
+        
+    def _check_valid_layer_imagenet(self, module):
         if not isinstance(module, nn.Linear) and not isinstance(module, nn.MaxPool2d):
            return True
         return False

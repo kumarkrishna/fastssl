@@ -115,13 +115,13 @@ def build_dataloaders(
             raise Exception("Algorithm not implemented")
     elif dataset == 'stl10':
         if algorithm in ('BarlowTwins', 'SimCLR', 'ssl', 'byol'):
-            return stl10_pt(
-                datadir,
-                splits=["unlabeled"],
-                batch_size=batch_size,
-                num_workers=num_workers)
-            # return stl_ffcv(
-            #     train_dataset, val_dataset, batch_size, num_workers)
+            # return stl10_pt(
+            #     datadir,
+            #     splits=["unlabeled"],
+            #     batch_size=batch_size,
+            #     num_workers=num_workers)
+            return stl_ffcv(
+                train_dataset, val_dataset, batch_size, num_workers)
         elif algorithm == 'linear':
             return stl_classifier_ffcv(
                 train_dataset, val_dataset, batch_size, num_workers)
@@ -292,9 +292,9 @@ def train_step(model, dataloader, args, target_model=None, optimizer=None, loss_
         if args.algorithm == 'byol':
             byol.update_state_dict(target_model, model.state_dict(), args.momentum_tau)
 
-        # import ray
-        # if ray.tune.is_session_enabled():
-        #     tune.report(epoch=epoch, loss=total_loss/num_batches)
+        import ray
+        if ray.tune.is_session_enabled():
+            tune.report(epoch=epoch, loss=total_loss/num_batches)
         train_bar.set_description(
             'Train Epoch: [{}/{}] Loss: {:.4f}'.format(epoch, args.epochs, total_loss / num_batches))
     return total_loss / num_batches
@@ -345,6 +345,7 @@ def train(model, loaders, optimizer, loss_fn, args):
                     'test_acc_1': [], 
                     'test_acc_5': []}
     
+
     
     if args.algorithm == 'linear':
         if args.use_autocast:

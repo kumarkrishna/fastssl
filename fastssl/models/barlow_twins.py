@@ -1,6 +1,3 @@
-import glob
-import os 
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -8,6 +5,7 @@ import torch.nn.functional as F
 from fastssl.models.ssl import SSL
 from fastssl.models.backbone import BackBone
 from fastssl.data.cifar_transforms import CifarTransform
+from fastssl.data.imagenet_dataloaders import TransformGPU
 
 ssl_transform = CifarTransform()
 
@@ -30,9 +28,11 @@ def BarlowTwinLoss(model, inp, _lambda=None):
         loss: scalar tensor
     """
 
-    # generate samples from tuple 
+    # generate samples from tuple
     (x1, x2), _ = inp
     x1, x2 = x1.cuda(non_blocking=True), x2.cuda(non_blocking=True)
+    # x1, x2 = TransformGPU(x1, x2)
+
     bsz = x1.shape[0]
     # x,_ = inp
     # x1,x2 = ssl_transform(x.cuda(non_blocking=True))
@@ -68,9 +68,11 @@ class BarlowTwins(SSL):
             self.hidden_dim = hidden_dim
         self.dataset = dataset 
         self.bkey = bkey
-
+        print(f'Network defined with projector dim {projector_dim} and hidden dim {hidden_dim}')
         self.backbone = BackBone(
-            name=self.bkey, dataset=self.dataset, projector_dim=self.projector_dim, hidden_dim=self.hidden_dim)
+            name=self.bkey, dataset=self.dataset,
+            projector_dim=projector_dim, hidden_dim=hidden_dim
+        )
     
     def forward(self, x):
         projections = self._unnormalized_project(x)
@@ -124,7 +126,7 @@ class LinearClassifier(nn.Module):
         # import pdb; pdb.set_trace()
         if ckpt_path is not None:
             ## map location cpu
-            self.load_state_dict(torch.load(ckpt_path, map_location="cpu"), strict=False)
+            self.load_state_dict(torch.load(ckpt_path, map_location="cpu")['model'], strict=False)
             print("Loaded pretrained weights from {}".format(ckpt_path))
         
         for param in self.backbone.parameters():

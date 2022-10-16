@@ -13,15 +13,18 @@ from ffcv.transforms import RandomHorizontalFlip, Cutout, \
     RandomTranslate, Convert, ToDevice, ToTensor, ToTorchImage
 from ffcv.transforms.common import Squeeze
 
+
 write_dataset = False
 
 dataset = 'cifar10'
+
 if dataset=='cifar100':
 	dataset_folder = '/network/datasets/cifar100.var/cifar100_torchvision/'
 	ffcv_folder = '/network/projects/_groups/linclab_users/ffcv/ffcv_datasets/cifar100'
 elif dataset=='stl10':
 	dataset_folder = '/network/datasets/stl10.var/stl10_torchvision/'
 	ffcv_folder = '/network/projects/_groups/linclab_users/ffcv/ffcv_datasets/stl10'
+
 elif dataset=='cifar10':
 	dataset_folder = '/network/datasets/cifar10.var/cifar10_torchvision/'
 	ffcv_folder = '/network/projects/_groups/linclab_users/ffcv/ffcv_datasets/cifar10'
@@ -59,6 +62,7 @@ if write_dataset:
 			'label': IntField()
 			})
 		writer.from_indexed_dataset(ds)
+
 
 ## VERIFY the WRITTEN DATASET
 BATCH_SIZE = 5000
@@ -110,6 +114,7 @@ X_tv, y_tv = next(iter(trainloader))
 print('FFCV stats:',X_ffcv.shape,X_ffcv.mean(),X_ffcv.min(),X_ffcv.max())
 print('torch stats:',X_tv.shape,X_tv.mean(),X_tv.min(),X_tv.max())
 print(torch.allclose(X_ffcv/255.,X_tv))
+
 breakpoint()
 
 # calculate mean and std of dataset

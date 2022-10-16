@@ -180,6 +180,56 @@ def gen_image_label_pipeline_ffcv_test(
 
     return loaders
 
+def gen_image_label_pipeline_ffcv_test(
+    train_dataset=None,
+    val_dataset=None,
+    batch_size=None,
+    num_workers=None,
+    transform_cls=None,
+    rescale=False,
+    device='cuda:0'):
+    """
+    Args:
+        train_dataset : path to train dataset
+        val_dataset   : path to test dataset 
+        batch_size    : batch-size
+        num_workers   : number of workers
+    Returns 
+        loaders       : dict('train': dataloader, 'test': dataloader)
+    """
+
+    datadir = {
+        'train': train_dataset,
+        'test': val_dataset
+    }
+    
+    loaders = {}
+
+    for split in ['train', 'test']:
+        label_pipeline  = gen_label_pipeline(device=device)
+        image_pipeline1 = gen_image_pipeline_ffcv_test(
+            device=device, transform_cls=transform_cls, rescale=rescale)
+        image_pipeline2 = gen_image_pipeline_ffcv_test(
+            device=device, transform_cls=transform_cls, rescale=rescale)
+
+        ordering = OrderOption.RANDOM #if split == 'train' else OrderOption.SEQUENTIAL
+        # ordering = OrderOption.SEQUENTIAL #if split == 'train' else OrderOption.SEQUENTIAL
+
+        # breakpoint()
+        loaders[split] = Loader(
+            datadir[split],
+            batch_size=batch_size,  
+            num_workers=num_workers,
+            os_cache=True,
+            order=ordering,
+            drop_last=False,
+            pipelines={'image1' : image_pipeline1,
+                        'image2': image_pipeline2}
+                        # 'label' : label_pipeline}     # The DoubleImage beton files don't have labels
+           )
+
+    return loaders
+
 def cifar_ffcv(
     train_dataset=None,
     val_dataset=None,
@@ -189,7 +239,6 @@ def cifar_ffcv(
 
     # transform_cls = CifarTransform
     transform_cls = CifarTransformFFCV()
-    loaders = {}
     return gen_image_label_pipeline_ffcv_test(
         train_dataset=train_dataset,
         val_dataset=val_dataset,

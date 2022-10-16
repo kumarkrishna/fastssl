@@ -12,8 +12,10 @@ plot_abs = False
 flag_debug = False
 calc_new_alpha = True
 R2_thresh = 0.95
-dataset_ssl = 'cifar10'
-dataset_classifier = 'stl10'
+
+dataset_ssl = 'stl10'
+dataset_classifier = 'cifar10'
+
 ckpt_dir = 'checkpoints_design_hparams_{}'.format(dataset_ssl)
 
 def stringer_get_powerlaw(ss, trange):
@@ -121,7 +123,6 @@ for fidx,file in enumerate(tqdm(files_sorted)):
 	try:
 		lamda_val = float(os.path.basename(file).split('lambd_')[-1].split('_')[0])
 		pdim_val = float(os.path.basename(file).split('pdim_')[-1].split('_')[0])
-		# if lamda_val <= 1e-6: continue
 		lamda_arr[lamda_val]=True
 		pdim_arr[pdim_val]=True
 		if pdim_val not in accuracy_dict.keys():
@@ -137,6 +138,7 @@ for fidx,file in enumerate(tqdm(files_sorted)):
 		if pdim_val not in R2_100_dict.keys():
 			R2_100_dict[pdim_val] = {}
 		SSL_fname = os.path.join(file,'results_{}_early_alpha_ssl_100.npy'.format(dataset_ssl))
+
 		if os.path.exists(SSL_fname): 
 			SSL_file = np.load(SSL_fname,allow_pickle=True).item()
 			SSL_loss_dict[pdim_val][lamda_val] = SSL_file['train_loss'][-1]/pdim_val #np.log(SSL_file['train_loss'][-1])/pdim_val
@@ -197,6 +199,7 @@ plot_colorplot(pdim_arr,lamda_arr,accuracy_dict,"Final accuracy",cmap='coolwarm'
 plot_colorplot(pdim_arr,lamda_arr,alpha_dict,r"$|1-\alpha|$" if plot_abs else r"$\alpha$",cmap='coolwarm_r',vmax=1.2 if plot_abs else 2.2)
 plot_colorplot(pdim_arr,lamda_arr,R2_100_dict,r"$R^2$ (top 100)",cmap='coolwarm',vmin=0.90)
 plot_colorplot(pdim_arr,lamda_arr,SSL_loss_dict,"SSL loss/pdim",cmap='coolwarm_r')#,vmax=6000)
+
 plot_scatterplot(alpha_dict,r"$|1-\alpha|$" if plot_abs else r"$\alpha$",accuracy_dict,"Final accuracy",filter_dict=R2_100_dict,vmin=70,vmax=85 if dataset_ssl!=dataset_classifier in dataset_classifier else 90,
 																																hmax=2 if 'stl' in dataset_classifier else 2.2)
 if plot_abs:

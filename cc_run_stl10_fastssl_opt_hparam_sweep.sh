@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-#SBATCH --array=0-20%7
+
+#SBATCH --array=0
 #SBATCH --partition=long
 #SBATCH --gres=gpu:a100:1
 #SBATCH --reservation=DGXA100

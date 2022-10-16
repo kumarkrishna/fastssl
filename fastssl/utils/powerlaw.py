@@ -5,24 +5,27 @@ from sklearn.decomposition import PCA
 from sklearn.metrics import r2_score
 import torch
 
-def fit_powerlaw(arr,start,end):
-    x_range = np.arange(start,end+1).astype(int)
-    y_range = arr[x_range-1]    # because the first eigenvalue is at index 0, so eigenval_{start} is at index (start-1)
-    reg = LinearRegression().fit(np.log(x_range).reshape(-1,1),np.log(y_range).reshape(-1,1))
-    y_pred = np.exp(reg.coef_*np.log(x_range).reshape(-1,1)+reg.intercept_)
+
+def fit_powerlaw(arr, start, end):
+    x_range = np.arange(start, end + 1).astype(int)
+    y_range = arr[x_range - 1]  # because the first eigenvalue is at index 0, so eigenval_{start} is at index (start-1)
+    reg = LinearRegression().fit(np.log(x_range).reshape(-1, 1), np.log(y_range).reshape(-1, 1))
+    y_pred = np.exp(reg.coef_ * np.log(x_range).reshape(-1, 1) + reg.intercept_)
     return -reg.coef_[0][0], x_range, y_pred
 
-def robust_fit_powerlaw(arr,start,end,verbose=False):
-    window = int((end-start)/10)
-    slope_arr = np.array([fit_powerlaw(arr,idx,idx+window)[0] for idx in range(start,end+1)])
+
+def robust_fit_powerlaw(arr, start, end, verbose=False):
+    window = int((end - start) / 10)
+    slope_arr = np.array([fit_powerlaw(arr, idx, idx + window)[0] for idx in range(start, end + 1)])
     robust_slope = np.median(slope_arr)
     if verbose:
         print(robust_slope)
         import matplotlib.pyplot as plt
-        x_range_plt = np.arange(start,end+1).astype(int)
-        y_pred_full = np.exp(-robust_slope*np.log(x_range_plt)+np.log(arr[start-1])+robust_slope*np.log(start))
-        plt.loglog(np.arange(1,1+arr.shape[0]),arr); 
-        plt.loglog(x_range_plt,y_pred_full); 
+        x_range_plt = np.arange(start, end + 1).astype(int)
+        y_pred_full = np.exp(
+            -robust_slope * np.log(x_range_plt) + np.log(arr[start - 1]) + robust_slope * np.log(start))
+        plt.loglog(np.arange(1, 1 + arr.shape[0]), arr);
+        plt.loglog(x_range_plt, y_pred_full);
         plt.show()
     return robust_slope
 
@@ -30,21 +33,22 @@ def stringer_get_powerlaw(ss, trange):
     # COPIED FROM Stringer+Pachitariu 2018b github repo! (https://github.com/MouseLand/stringer-pachitariu-et-al-2018b/blob/master/python/utils.py)
     ''' fit exponent to variance curve'''
     logss = np.log(np.abs(ss))
-    y = logss[trange][:,np.newaxis]
+    y = logss[trange][:, np.newaxis]
     trange += 1
     nt = trange.size
-    x = np.concatenate((-np.log(trange)[:,np.newaxis], np.ones((nt,1))), axis=1)
-    w = 1.0 / trange.astype(np.float32)[:,np.newaxis]
+    x = np.concatenate((-np.log(trange)[:, np.newaxis], np.ones((nt, 1))), axis=1)
+    w = 1.0 / trange.astype(np.float32)[:, np.newaxis]
     b = np.linalg.solve(x.T @ (x * w), (w * x).T @ y).flatten()
-    
+
     allrange = np.arange(0, ss.size).astype(int) + 1
-    x = np.concatenate((-np.log(allrange)[:,np.newaxis], np.ones((ss.size,1))), axis=1)
+    x = np.concatenate((-np.log(allrange)[:, np.newaxis], np.ones((ss.size, 1))), axis=1)
     ypred = np.exp((x * b).sum(axis=1))
     alpha = b[0]
-    max_range = 500 if len(ss)>=512 else len(ss) - 10   # subtracting 10 here arbitrarily because we want to avoid the last tail!
-    fit_R2 = r2_score(y_true=logss[trange[0]:max_range],y_pred=np.log(np.abs(ypred))[trange[0]:max_range])
+    max_range = 500 if len(ss) >= 512 else len(
+        ss) - 10  # subtracting 10 here arbitrarily because we want to avoid the last tail!
+    fit_R2 = r2_score(y_true=logss[trange[0]:max_range], y_pred=np.log(np.abs(ypred))[trange[0]:max_range])
     try:
-        fit_R2_100 = r2_score(y_true=logss[trange[0]:100],y_pred=np.log(np.abs(ypred))[trange[0]:100])
+        fit_R2_100 = r2_score(y_true=logss[trange[0]:100], y_pred=np.log(np.abs(ypred))[trange[0]:100])
     except:
         fit_R2_100 = None
     return alpha, ypred, fit_R2, fit_R2_100
@@ -89,7 +93,8 @@ def get_eigenspectrum(activations_np,max_eigenvals=2048):
     eigenspectrum = pca.explained_variance_ratio_
     return eigenspectrum
 
-def stringer_get_powerlaw_batch(net,layer,data_loader,trange,use_cuda=False,test_run=False):
+
+def stringer_get_powerlaw_batch(net, layer, data_loader, trange, use_cuda=False, test_run=False):
     alpha_arr = []
     R2_arr = []
     R2_100_arr = []
@@ -99,20 +104,20 @@ def stringer_get_powerlaw_batch(net,layer,data_loader,trange,use_cuda=False,test
     for i, (images, labels) in enumerate(tqdm(data_loader)):
         # ignore last batch if incomplete
         # print(i,len(data_loader),len(images),data_loader.batch_size)
-        if i==len(data_loader)-1 and len(images)<data_loader.batch_size:
+        if i == len(data_loader) - 1 and len(images) < data_loader.batch_size:
             break
         trange_orig = trange.copy()
         if use_cuda:
             images = images.cuda()
         with torch.no_grad():
-            feats = generate_activations_prelayer_batch(net=net,layer=layer,images=images)
+            feats = generate_activations_prelayer_batch(net=net, layer=layer, images=images)
         feats_np = feats.cpu().numpy()
         feats_eig = get_eigenspectrum(feats_np)
         # print(trange.min(),trange.max(),feats_eig.shape)
-        alpha_batch,_,R2_batch,R2_100_batch = stringer_get_powerlaw(ss=feats_eig,trange=trange_orig)
+        alpha_batch, _, R2_batch, R2_100_batch = stringer_get_powerlaw(ss=feats_eig, trange=trange_orig)
         alpha_arr.append(alpha_batch)
         R2_arr.append(R2_batch)
         R2_100_arr.append(R2_100_batch)
-        if i==2 and test_run:
-          break
+        if i == 2 and test_run:
+            break
     return np.array(alpha_arr), np.array(R2_arr), np.array(R2_100_arr)
