@@ -4,13 +4,15 @@ training:
   train_dataset: '/network/projects/_groups/linclab_users/ffcv/ffcv_datasets/{dataset}/train.beton'
   val_dataset: '/network/projects/_groups/linclab_users/ffcv/ffcv_datasets/{dataset}/test.beton'
   batch_size: 512
-  epochs: 100
+  epochs: 200
   lambd: 0.0078125
   projector_dim: 128
   seed: 42
-  algorithm: 'ssl'
-  model: 'resnet50proj'
+  algorithm: 'linear'
+  model: 'resnet50feat'
   num_workers: 4
   ckpt_dir: 'checkpoints'
   use_autocast: True
-  log_interval: 100
+eval:
+  train_algorithm: 'ssl'
+  epoch: 100

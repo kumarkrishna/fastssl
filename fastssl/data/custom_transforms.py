@@ -1,10 +1,8 @@
-import numpy as np
+import random
+from PIL import Image, ImageOps, ImageFilter
 import torch
-from torch import nn, optim
+from torch import nn
 import torchvision.transforms as transforms
-from ffcv.transforms import RandomHorizontalFlip, RandomResizedCrop, Cutout, \
-	RandomTranslate, Convert, ToDevice, ToTensor, ToTorchImage, NormalizeImage
-from fastssl.data.custom_ffcv_transforms import ColorJitter, RandomGrayscale
 
 # mean, std for normalized dataset
 CIFAR_MEAN = [0.485, 0.456, 0.406]
@@ -22,26 +20,6 @@ class ReScale(nn.Module):
         self.scale = scale
     def forward(self, x):
         return x * self.scale
-
-class CifarTransformFFCV():
-    """
-    Defines a list of FFCV transforms for SSL on CIFAR
-    """
-    def __init__(self):
-        self.transform_list = [
-                                RandomHorizontalFlip(flip_prob=0.5),
-                                ColorJitter(jitter_prob=0.8,
-                                            brightness=0.4, 
-                                            contrast=0.4,
-                                            saturation=0.4, 
-                                            hue=0.0),
-                                RandomGrayscale(p=0.2),
-                                NormalizeImage(mean=np.array(CIFAR_FFCV_MEAN),
-                                        std=np.array(CIFAR_FFCV_STD),type=np.float32)
-                                ]
-        self.dataset_side_length = 32
-        self.dataset_resize_scale = (0.08,1.0)
-        self.dataset_resize_ratio = (0.75,4/3)
 
 class CifarTransform(nn.Module):
     """
@@ -62,34 +40,14 @@ class CifarTransform(nn.Module):
             ),
             transforms.RandomGrayscale(p=0.2),
             transforms.Normalize(mean=CIFAR_MEAN,
-                                 std=CIFAR_STD),
-            
+                                 std=CIFAR_STD)
         ])
+
 
     def forward(self, x):
         y1 = self.transform(x)
         y2 = self.transform(x)
         return (y1, y2)
-
-class STLTransformFFCV():
-    """
-    Defines a list of FFCV transforms for SSL on STL
-    """
-    def __init__(self):
-        self.transform_list = [
-                                RandomHorizontalFlip(flip_prob=0.5),
-                                ColorJitter(jitter_prob=0.8,
-                                            brightness=0.4, 
-                                            contrast=0.4,
-                                            saturation=0.4, 
-                                            hue=0.0),
-                                RandomGrayscale(p=0.1),
-                                NormalizeImage(mean=np.array(STL_FFCV_MEAN),
-                                        std=np.array(STL_FFCV_MEAN),type=np.float32)
-                                ]
-        self.dataset_side_length = 64
-        self.dataset_resize_scale = (0.2,1.0)
-        self.dataset_resize_ratio = (0.75,4/3)
 
 class STLTransform(nn.Module):
     """
@@ -163,14 +121,11 @@ class SSLPT_CIFAR(torch.nn.Module):
         self.transform = transforms.Compose([
             # NOTE : ToTensor normalized uint8 to float32 in range [0.0, 1.0]
             #        This is handled for FFCV manually by adding a scaler.
-            # transforms.ToTensor(),
+            transforms.ToTensor(),
             CifarTransform()
         ])
-        self.TensorTransform = transforms.ToTensor()
     
     def forward(self, x):
-        x = self.TensorTransform(x)
-        # return x
         return self.transform(x)
 
 class SSLPT_STL(torch.nn.Module):
@@ -185,3 +140,70 @@ class SSLPT_STL(torch.nn.Module):
     
     def forward(self, x):
         return self.transform(x)
+
+class GaussianBlur(nn.Module):
+    def __init__(self, p):
+        super().__init__()
+        self.p = p
+
+    def forward(self, img):
+        if random.random() < self.p:
+            sigma = random.random() * 1.9 + 0.1
+            gblur = transforms.GaussianBlur(5, sigma=sigma)
+            return gblur(img)
+        else:
+            return img
+
+
+class Solarization(nn.Module):
+    def __init__(self, p):
+        super().__init__()
+        self.p = p
+
+    def forward(self, img):
+        if random.random() < self.p:
+            return ImageOps.solarize(img)
+        else:
+            return img
+
+## transform for datasampler
+class TransformImagenet(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.transform = transforms.Compose([
+            transforms.RandomResizedCrop(224, interpolation=Image.BICUBIC),
+            transforms.RandomHorizontalFlip(p=0.5),
+            transforms.RandomApply(
+                [transforms.ColorJitter(brightness=0.4, contrast=0.4,
+                                        saturation=0.2, hue=0.1)],
+                p=0.8
+            ),
+            transforms.RandomGrayscale(p=0.2),
+            GaussianBlur(p=1.0),
+            #Solarization(p=0.0),
+            transforms.ConvertImageDtype(torch.float16),
+            #transforms.ConvertImageDtype(torch.float32),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                 std=[0.229, 0.224, 0.225])
+        ])
+        self.transform_prime = transforms.Compose([
+            transforms.RandomResizedCrop(224, interpolation=Image.BICUBIC),
+            transforms.RandomHorizontalFlip(p=0.5),
+            transforms.RandomApply(
+                [transforms.ColorJitter(brightness=0.4, contrast=0.4,
+                                        saturation=0.2, hue=0.1)],
+                p=0.8
+            ),
+            transforms.RandomGrayscale(p=0.2),
+            GaussianBlur(p=0.1),
+            #Solarization(p=0.2),
+            transforms.ConvertImageDtype(torch.float16),
+            #transforms.ConvertImageDtype(torch.float32),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                 std=[0.229, 0.224, 0.225])
+        ])
+
+    def __call__(self, x):
+        y1 = self.transform(x)
+        y2 = self.transform_prime(x)
+        return y1, y2

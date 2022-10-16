@@ -12,8 +12,10 @@ plot_abs = False
 flag_debug = False
 calc_new_alpha = True
 R2_thresh = 0.95
-dataset_ssl = 'stl10'
-dataset_classifier = 'stl10'
+
+dataset_ssl = 'cifar10'
+dataset_classifier = 'cifar10'
+
 ckpt_dir = 'checkpoints_opt_hparams_{}'.format(dataset_ssl)
 
 def stringer_get_powerlaw(ss, trange):
@@ -134,8 +136,7 @@ for fidx,file in enumerate(tqdm(files_sorted)):
 			R2_100_dict[wd_val] = {}
 		SSL_fname = os.path.join(file,'results_{}_early_alpha_ssl_100.npy'.format(dataset_ssl))
 		SSL_file = np.load(SSL_fname,allow_pickle=True).item()
-		# SSL_loss_dict[wd_val][lr_val] = np.log(SSL_file['train_loss'][-1])
-		SSL_loss_dict[wd_val][lr_val] = SSL_file['train_loss'][-1] #np.log(SSL_file['train_loss'][-1])/pdim_val
+		SSL_loss_dict[wd_val][lr_val] = np.log(SSL_file['train_loss'][-1])
 
 		linear_files = glob.glob(os.path.join(file,'results_{}_early_alpha_linear_200*'.format(dataset_classifier)))
 		for linear_fname in linear_files:
@@ -191,7 +192,7 @@ wd_arr = np.array(list(wd_arr.keys()))
 plot_colorplot(wd_arr,lr_arr,accuracy_dict,"Final accuracy",cmap='coolwarm',vmin=70,vmax=85 if 'stl' in dataset_classifier else 90)
 plot_colorplot(wd_arr,lr_arr,alpha_dict,r"$|1-\alpha|$" if plot_abs else r"$\alpha$",cmap='coolwarm_r',vmax=1.2 if plot_abs else 2.2)
 plot_colorplot(wd_arr,lr_arr,R2_100_dict,r"$R^2$ (top 100)",cmap='coolwarm')
-plot_colorplot(wd_arr,lr_arr,SSL_loss_dict,"SSL loss",cmap='coolwarm_r')#,vmax=6000)
+plot_colorplot(wd_arr,lr_arr,SSL_loss_dict,"SSL loss (log)",cmap='coolwarm_r')#,vmax=6000)
 plot_scatterplot(alpha_dict,r"$|1-\alpha|$" if plot_abs else r"$\alpha$",accuracy_dict,"Final accuracy",vmin=70,vmax=85 if 'stl' in dataset_classifier else 90,
 																										hmax=2 if 'stl' in dataset_classifier else 2.2)
 

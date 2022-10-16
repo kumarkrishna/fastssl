@@ -34,7 +34,7 @@ from tqdm import tqdm
 
 from fastargs import Section, Param
 
-from fastssl.data import cifar_ffcv, cifar_classifier_ffcv, cifar_pt, stl10_pt, stl_classifier_ffcv
+from fastssl.data import cifar_ffcv, cifar_classifier_ffcv, cifar_pt, stl_ffcv, stl10_pt, stl_classifier_ffcv
 from fastssl.models import barlow_twins as bt
 from fastssl.models import byol #, simclr
 
@@ -100,11 +100,11 @@ def build_dataloaders(
     num_workers=2):
     if 'cifar' in dataset:
         if algorithm in ('BarlowTwins', 'SimCLR', 'ssl', 'byol'):
-            return cifar_pt(
-                datadir, batch_size=batch_size, num_workers=num_workers)
+            # return cifar_pt(
+            #     datadir, batch_size=batch_size, num_workers=num_workers)
             # for ffcv cifar10 dataloader
-            # return cifar_ffcv(
-            #     train_dataset, val_dataset, batch_size, num_workers)
+            return cifar_ffcv(
+                train_dataset, val_dataset, batch_size, num_workers)
         elif algorithm == 'linear':
             # dataloader for classifier
             return cifar_classifier_ffcv(
@@ -113,11 +113,13 @@ def build_dataloaders(
             raise Exception("Algorithm not implemented")
     elif dataset == 'stl10':
         if algorithm in ('BarlowTwins', 'SimCLR', 'ssl', 'byol'):
-            return stl10_pt(
-                datadir,
-                splits=["unlabeled"],
-                batch_size=batch_size,
-                num_workers=num_workers)
+            # return stl10_pt(
+            #     datadir,
+            #     splits=["unlabeled"],
+            #     batch_size=batch_size,
+            #     num_workers=num_workers)
+            return stl_ffcv(
+                train_dataset, val_dataset, batch_size, num_workers)
         elif algorithm == 'linear':
             return stl_classifier_ffcv(
                 train_dataset, val_dataset, batch_size, num_workers)
@@ -226,6 +228,14 @@ def build_optimizer(model, args=None):
     else:
         raise Exception('Algorithm not implemented')
 
+# def save_images(img1,img2,name):
+#     import matplotlib.pyplot as plt 
+#     plt.close('all')
+#     plt.imsave('test_imgs/{}1.png'.format(name),img1/255.)
+#     plt.close('all')
+#     plt.imsave('test_imgs/{}2.png'.format(name),img2/255.)
+#     plt.close('all')
+
 def train_step(model, dataloader, args, target_model=None, optimizer=None, loss_fn=None, scaler=None, epoch=None):
     """
     Generic trainer.
@@ -248,6 +258,11 @@ def train_step(model, dataloader, args, target_model=None, optimizer=None, loss_
 
     # for inp in dataloader:
     for inp in train_bar:
+        # if num_batches==0:
+        #     save_images(img1=inp[0][0].detach().cpu().numpy().transpose([1,2,0]),img2=inp[1][0].detach().cpu().numpy().transpose([1,2,0]),name='epoch_{}_img_'.format(epoch))
+        # breakpoint()
+        if type(inp[0])==type(inp[1]) and inp[0].shape==inp[1].shape:   # inp is a tuple with the two augmentations.
+            inp = ((inp[0],inp[1]), None)
         ## backward
         optimizer.zero_grad()
 

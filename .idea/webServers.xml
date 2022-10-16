@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="WebServers">
+    <option name="servers">
+      <webServer id="d0628906-4c68-4c73-8b71-d723ba39baf7" name="arnab39@beluga.computecanada.ca:22 password">
+        <fileTransfer accessType="SFTP" host="beluga.computecanada.ca" port="22" sshConfigId="63381853-5f53-4324-9081-5cced0f315c9" sshConfig="arnab39@beluga.computecanada.ca:22 password">
+          <advancedOptions>
+            <advancedOptions isUseRsync="true" />
+          </advancedOptions>
+        </fileTransfer>
+      </webServer>
+      <webServer id="15827014-de65-4ca1-94bc-13b2998fb4da" name="narval.computecanada.ca">
+        <fileTransfer accessType="SFTP" host="narval.computecanada.ca" port="22" sshConfigId="b6037779-14dc-4e31-94f8-f71e8dd683e4" sshConfig="arnab39@narval.computecanada.ca:22 password">
+          <advancedOptions>
+            <advancedOptions dataProtectionLevel="Private" passiveMode="true" shareSSLContext="true" isUseRsync="true" />
+          </advancedOptions>
+        </fileTransfer>
+      </webServer>
+    </option>
+  </component>
+</project>
