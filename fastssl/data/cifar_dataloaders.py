@@ -205,8 +205,7 @@ def gen_image_label_pipeline_ffcv_test(
     
     loaders = {}
 
-    for split in ['train', 'test']:
-        label_pipeline  = gen_label_pipeline(device=device)
+    for split in ['train']:
         image_pipeline1 = gen_image_pipeline_ffcv_test(
             device=device, transform_cls=transform_cls, rescale=rescale)
         image_pipeline2 = gen_image_pipeline_ffcv_test(
@@ -226,6 +225,23 @@ def gen_image_label_pipeline_ffcv_test(
             pipelines={'image1' : image_pipeline1,
                         'image2': image_pipeline2}
                         # 'label' : label_pipeline}     # The DoubleImage beton files don't have labels
+           )
+
+    for split in ['test']:
+        label_pipeline  = gen_label_pipeline(device=device)
+        image_pipeline = gen_image_pipeline(
+            device=device, transform_cls=CifarClassifierTransform, rescale=rescale)
+
+        ordering = OrderOption.RANDOM #if split == 'train' else OrderOption.SEQUENTIAL
+
+        loaders[split] = Loader(
+            datadir[split],
+            batch_size=batch_size,  
+            num_workers=num_workers,
+            os_cache=True,
+            order=ordering,
+            drop_last=False,
+            pipelines={'image' : image_pipeline, 'label' : label_pipeline}
            )
 
     return loaders
