@@ -12,6 +12,7 @@ plot_abs = False
 flag_debug = False
 calc_new_alpha = True
 R2_thresh = 0.95
+
 dataset_ssl = 'stl10'
 dataset_classifier = 'cifar10'
 
@@ -137,8 +138,13 @@ for fidx,file in enumerate(tqdm(files_sorted)):
 		if pdim_val not in R2_100_dict.keys():
 			R2_100_dict[pdim_val] = {}
 		SSL_fname = os.path.join(file,'results_{}_early_alpha_ssl_100.npy'.format(dataset_ssl))
-		SSL_file = np.load(SSL_fname,allow_pickle=True).item()
-		SSL_loss_dict[pdim_val][lamda_val] = np.log(SSL_file['train_loss'][-1])/pdim_val
+
+		if os.path.exists(SSL_fname): 
+			SSL_file = np.load(SSL_fname,allow_pickle=True).item()
+			SSL_loss_dict[pdim_val][lamda_val] = SSL_file['train_loss'][-1]/pdim_val #np.log(SSL_file['train_loss'][-1])/pdim_val
+		else:
+			SSL_loss_dict[pdim_val][lamda_val] = np.nan
+
 		linear_files = glob.glob(os.path.join(file,'results_{}_early_alpha_linear_200*'.format(dataset_classifier)))
 		for linear_fname in linear_files:
 			# linear_fname = os.path.join(file,'results_{}_early_alpha_linear_200.npy'.format(dataset))
@@ -186,12 +192,14 @@ for fidx,file in enumerate(tqdm(files_sorted)):
 		pass
 
 
-lamda_arr = np.array(list(lamda_arr.keys()))
-pdim_arr = np.array(list(pdim_arr.keys()))
+lamda_arr = np.sort(np.array(list(lamda_arr.keys())))
+pdim_arr = np.sort(np.array(list(pdim_arr.keys())))
+print(lamda_arr)
 plot_colorplot(pdim_arr,lamda_arr,accuracy_dict,"Final accuracy",cmap='coolwarm',vmin=70,vmax=85 if dataset_ssl!=dataset_classifier in dataset_classifier else 90)
 plot_colorplot(pdim_arr,lamda_arr,alpha_dict,r"$|1-\alpha|$" if plot_abs else r"$\alpha$",cmap='coolwarm_r',vmax=1.2 if plot_abs else 2.2)
 plot_colorplot(pdim_arr,lamda_arr,R2_100_dict,r"$R^2$ (top 100)",cmap='coolwarm',vmin=0.90)
-plot_colorplot(pdim_arr,lamda_arr,SSL_loss_dict,"SSL loss (log)",cmap='coolwarm_r')#,vmax=6000)
+plot_colorplot(pdim_arr,lamda_arr,SSL_loss_dict,"SSL loss/pdim",cmap='coolwarm_r')#,vmax=6000)
+
 plot_scatterplot(alpha_dict,r"$|1-\alpha|$" if plot_abs else r"$\alpha$",accuracy_dict,"Final accuracy",filter_dict=R2_100_dict,vmin=70,vmax=85 if dataset_ssl!=dataset_classifier in dataset_classifier else 90,
 																																hmax=2 if 'stl' in dataset_classifier else 2.2)
 if plot_abs:

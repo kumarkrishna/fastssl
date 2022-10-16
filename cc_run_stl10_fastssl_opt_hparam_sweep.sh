@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-#SBATCH --array=0-2%3
+
+#SBATCH --array=0
 #SBATCH --partition=long
 #SBATCH --gres=gpu:a100:1
 #SBATCH --reservation=DGXA100
@@ -14,19 +15,19 @@
 module load anaconda/3
 conda activate ffcv
 
-lamda=0.016
+lamda=0.001
 proj=1024
-# lr_arr=(0.0001 0.00017783 0.00031623 0.00056234 0.001 0.002)
-# wd_arr=(1e-8 1e-6 1e-4)
-lr_arr=(0.0001 0.00017783 0.001)
-wd_arr=(1e-06 1e-06 0.0001)
+lr_arr=(0.0001 0.0002 0.0004 0.001 0.002 0.004 0.01)
+wd_arr=(1e-8 1e-6 1e-4)
+# lr_arr=(0.0001 0.00017783 0.001)
+# wd_arr=(1e-06 1e-06 0.0001)
 checkpt_dir='checkpoints_opt_hparams_stl10'
 
-# lenL=${#lr_arr[@]}
-# lidx=$((SLURM_ARRAY_TASK_ID%lenL))
-# widx=$((SLURM_ARRAY_TASK_ID/lenL))
-lidx=$SLURM_ARRAY_TASK_ID
-widx=$SLURM_ARRAY_TASK_ID
+lenL=${#lr_arr[@]}
+lidx=$((SLURM_ARRAY_TASK_ID%lenL))
+widx=$((SLURM_ARRAY_TASK_ID/lenL))
+# lidx=$SLURM_ARRAY_TASK_ID
+# widx=$SLURM_ARRAY_TASK_ID
 
 dataset='stl10'
 batch_size=256

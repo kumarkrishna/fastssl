@@ -80,6 +80,8 @@ Section('training', 'Fast CIFAR-10 training').params(
         str, 'ckpt-dir', default='/data/krishna/research/results/0319/001/checkpoints'),
     use_autocast=Param(
         bool, 'autocast fp16', default=True),
+    track_alpha=Param(
+        bool, 'Track evolution of alpha', default=False),
 )
 
 Section('eval', 'Fast CIFAR-10 evaluation').params(
@@ -330,19 +332,31 @@ def debug_plot(activations_eigen,alpha,ypred,R2,R2_100,figname):
 
 
 def train(model, loaders, optimizer, loss_fn, args):
-    results = {'train_loss': [], 'test_acc_1': [], 'test_acc_5': []}
+    if args.track_alpha:
+        results = {'train_loss': [], 
+                    'test_acc_1': [], 
+                    'test_acc_5': [], 
+                    'eigenspectrum': [], 
+                    'alpha': [], 
+                    'R2': [], 
+                    'R2_100': []}
+    else:
+        results = {'train_loss': [], 
+                    'test_acc_1': [], 
+                    'test_acc_5': []}
+    
+
     
     if args.algorithm == 'linear':
         if args.use_autocast:
             with autocast():
-                # alpha_arr, R2_arr, R2_100_arr = powerlaw.stringer_get_powerlaw_batch(net=model,layer=model.fc,
-                #                                                                     # data_loader=loaders['test'],trange=np.arange(50,200),
-                #                                                                     data_loader=loaders['test'],trange=np.arange(5,50),
-                #                                                                     use_cuda=True)
-                activations = powerlaw.generate_activations_prelayer(net=model,layer=model.fc,data_loader=loaders['test'],use_cuda=True)
+                activations = powerlaw.generate_activations_prelayer(net=model,
+                                                                    layer=model.fc,
+                                                                    data_loader=loaders['test'],
+                                                                    use_cuda=True)
                 activations_eigen = powerlaw.get_eigenspectrum(activations)
-                # alpha,ypred,R2,R2_100 = powerlaw.stringer_get_powerlaw(activations_eigen,trange=np.arange(3,500))
-                alpha,ypred,R2,R2_100 = powerlaw.stringer_get_powerlaw(activations_eigen,trange=np.arange(3,100))
+                alpha,ypred,R2,R2_100 = powerlaw.stringer_get_powerlaw(activations_eigen,
+                                                                    trange=np.arange(3,100))
                 # debug_plot(activations_eigen,alpha,ypred,R2,R2_100,'test_full_early_{:.4f}.png'.format(args.lambd))
                 # save_path = gen_ckpt_path(args, args.algorithm, args.epochs, 'results_{}_full_early_alpha'.format(args.dataset), 'npy')
                 # np.save(save_path,dict(alpha=alpha,R2=R2,R2_100=R2_100))
@@ -352,7 +366,8 @@ def train(model, loaders, optimizer, loss_fn, args):
                 results['R2'] = R2
                 results['R2_100'] = R2_100
         else:
-            alpha_arr, R2_arr, R2_100_arr = powerlaw.stringer_get_powerlaw_batch(net=model,layer=model.fc,
+            alpha_arr, R2_arr, R2_100_arr = powerlaw.stringer_get_powerlaw_batch(net=model,
+                                                                                layer=model.fc,
                                                                                 # data_loader=loaders['test'],trange=np.arange(50,200),
                                                                                 data_loader=loaders['test'],trange=np.arange(5,50),
                                                                                 use_cuda=True)
@@ -385,6 +400,7 @@ def train(model, loaders, optimizer, loss_fn, args):
         
         results['train_loss'].append(train_loss)
 
+
         if args.algorithm == 'linear':
             acc_1, acc_5 = eval_step(model, loaders['test'], epoch=epoch, epochs=args.epochs)
             results['test_acc_1'].append(acc_1)
@@ -394,6 +410,19 @@ def train(model, loaders, optimizer, loss_fn, args):
             torch.save(
                 model.state_dict(),
                 ckpt_path)
+            if args.track_alpha:
+                # compute alpha at intermediate training steps
+                activations = powerlaw.generate_activations_prelayer(net=model,
+                                                                    layer=model.backbone.proj,
+                                                                    data_loader=loaders['test'],
+                                                                    use_cuda=True)
+                activations_eigen = powerlaw.get_eigenspectrum(activations)
+                alpha,ypred,R2,R2_100 = powerlaw.stringer_get_powerlaw(activations_eigen,
+                                                                    trange=np.arange(3,100))
+                results['eigenspectrum'].append((epoch,activations_eigen))
+                results['alpha'].append((epoch,alpha))
+                results['R2'].append((epoch,R2))
+                results['R2_100'].append((epoch,R2_100))
     return results
 
 

@@ -5,7 +5,7 @@ import numpy as np
 class BackBone(nn.Module):
     def __init__(self,
                  name='resnet50feat',
-                 dataset='cifar10',
+                 dataset='cifar10', 
                  projector_dim=128,
                  hidden_dim=128):
         super(BackBone, self).__init__()
@@ -98,7 +98,7 @@ class BackBone(nn.Module):
         if not isinstance(module, nn.Linear) and not isinstance(module, nn.MaxPool2d):
            return True
         return False
-
+        
     def _check_valid_layer_imagenet(self, module):
         if not isinstance(module, nn.Linear) and not isinstance(module, nn.MaxPool2d):
            return True

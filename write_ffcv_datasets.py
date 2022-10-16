@@ -13,7 +13,11 @@ from ffcv.transforms import RandomHorizontalFlip, Cutout, \
     RandomTranslate, Convert, ToDevice, ToTensor, ToTorchImage
 from ffcv.transforms.common import Squeeze
 
-dataset = 'stl10'
+
+write_dataset = False
+
+dataset = 'cifar10'
+
 if dataset=='cifar100':
 	dataset_folder = '/network/datasets/cifar100.var/cifar100_torchvision/'
 	ffcv_folder = '/network/projects/_groups/linclab_users/ffcv/ffcv_datasets/cifar100'
@@ -21,39 +25,44 @@ elif dataset=='stl10':
 	dataset_folder = '/network/datasets/stl10.var/stl10_torchvision/'
 	ffcv_folder = '/network/projects/_groups/linclab_users/ffcv/ffcv_datasets/stl10'
 
+elif dataset=='cifar10':
+	dataset_folder = '/network/datasets/cifar10.var/cifar10_torchvision/'
+	ffcv_folder = '/network/projects/_groups/linclab_users/ffcv/ffcv_datasets/cifar10'
 
+
+if dataset=='cifar100':
+	trainset = torchvision.datasets.CIFAR100(
+	    root=dataset_folder, train=True, download=False, transform=None)
+	testset = torchvision.datasets.CIFAR100(
+	    root=dataset_folder, train=False, download=False, transform=None)
+
+elif dataset=='cifar10':
+	trainset = torchvision.datasets.CIFAR10(
+	    root=dataset_folder, train=True, download=False, transform=None)
+	testset = torchvision.datasets.CIFAR10(
+	    root=dataset_folder, train=False, download=False, transform=None)
+
+elif dataset=='stl10':
+	trainset = torchvision.datasets.STL10(
+	    root=dataset_folder, split='train', download=False, transform=None)
+	testset = torchvision.datasets.STL10(
+	    root=dataset_folder, split='test', download=False, transform=None)
+	
+train_beton_fpath = os.path.join(ffcv_folder,'train.beton')
+test_beton_fpath = os.path.join(ffcv_folder,'test.beton')
 
 ## WRITE TO BETON FILES
+if write_dataset:
+	datasets = {'train': trainset, 'test':testset}
+	for name,ds in datasets.items():
+		breakpoint()
+		path = train_beton_fpath if name=='train' else test_beton_fpath
+		writer = DatasetWriter(path, {
+			'image': RGBImageField(),
+			'label': IntField()
+			})
+		writer.from_indexed_dataset(ds)
 
-# if dataset=='cifar100':
-# 	trainset = torchvision.datasets.CIFAR100(
-# 	    root=dataset_folder, train=True, download=False, transform=None)
-	
-
-# 	testset = torchvision.datasets.CIFAR100(
-# 	    root=dataset_folder, train=False, download=False, transform=None)
-# 	test_beton_fpath = os.path.join(ffcv_folder,'test.beton')
-
-# elif dataset=='stl10':
-# 	trainset = torchvision.datasets.STL10(
-# 	    root=dataset_folder, split='train', download=False, transform=None)
-# 	train_beton_fpath = os.path.join(ffcv_folder,'train.beton')
-
-# 	testset = torchvision.datasets.STL10(
-# 	    root=dataset_folder, split='test', download=False, transform=None)
-	
-# train_beton_fpath = os.path.join(ffcv_folder,'train.beton')
-# test_beton_fpath = os.path.join(ffcv_folder,'test.beton')
-# datasets = {'train': trainset, 'test':testset}
-
-# for name,ds in datasets.items():
-# 	breakpoint()
-# 	path = train_beton_fpath if name=='train' else test_beton_fpath
-# 	writer = DatasetWriter(path, {
-# 		'image': RGBImageField(),
-# 		'label': IntField()
-# 		})
-# 	writer.from_indexed_dataset(ds)
 
 ## VERIFY the WRITTEN DATASET
 BATCH_SIZE = 5000
@@ -80,6 +89,15 @@ transform_test = torchvision.transforms.Compose([torchvision.transforms.ToTensor
 if dataset=='cifar100':
 	trainset = torchvision.datasets.CIFAR100(
 	    root=dataset_folder, train=True, download=False, transform=transform_test)
+	testset = torchvision.datasets.CIFAR100(
+	    root=dataset_folder, train=False, download=False, transform=transform_test)
+
+elif dataset=='cifar10':
+	trainset = torchvision.datasets.CIFAR10(
+	    root=dataset_folder, train=True, download=False, transform=transform_test)
+	testset = torchvision.datasets.CIFAR10(
+	    root=dataset_folder, train=False, download=False, transform=transform_test)
+
 elif dataset=='stl10':
 	trainset = torchvision.datasets.STL10(
 	    root=dataset_folder, split='train', download=False, transform=transform_test)
@@ -94,8 +112,9 @@ testloader = torch.utils.data.DataLoader(
 X_ffcv, y_ffcv = next(iter(loaders['train']))
 X_tv, y_tv = next(iter(trainloader))
 print('FFCV stats:',X_ffcv.shape,X_ffcv.mean(),X_ffcv.min(),X_ffcv.max())
-print('torchV stats:',X_tv.shape,X_tv.mean(),X_tv.min(),X_tv.max())
-print(torch.allclose(X_ffcv,X_tv))
+print('torch stats:',X_tv.shape,X_tv.mean(),X_tv.min(),X_tv.max())
+print(torch.allclose(X_ffcv/255.,X_tv))
+
 breakpoint()
 
 # calculate mean and std of dataset

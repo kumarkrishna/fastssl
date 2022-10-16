@@ -29,7 +29,6 @@ def robust_fit_powerlaw(arr, start, end, verbose=False):
         plt.show()
     return robust_slope
 
-
 def stringer_get_powerlaw(ss, trange):
     # COPIED FROM Stringer+Pachitariu 2018b github repo! (https://github.com/MouseLand/stringer-pachitariu-et-al-2018b/blob/master/python/utils.py)
     ''' fit exponent to variance curve'''
@@ -54,9 +53,40 @@ def stringer_get_powerlaw(ss, trange):
         fit_R2_100 = None
     return alpha, ypred, fit_R2, fit_R2_100
 
+def generate_activations_prelayer(net,layer,data_loader,use_cuda=False,dim_thresh=10000,test_run=False):
+    pool_size = 1
+    activations = []
+    def hook_fn(m,i,o):
+        activations.append(i[0].cpu().numpy())
+    handle = layer.register_forward_hook(hook_fn)
+    
+    if use_cuda:
+        net = net.cuda()    
+    net.eval()
+    for i, (images, labels) in enumerate(tqdm(data_loader)):
+        if use_cuda:
+            images = images.cuda()
+        with torch.no_grad():
+            output = net(images)
+        if i==10 and test_run:
+            break
+    handle.remove()
+    activations_np = np.vstack(activations)     # assuming first dimension is num_examples: batches x batch_size x <feat_dims> --> num_examples x <feat_dims>
+    return activations_np
 
-def get_eigenspectrum(activations_np, max_eigenvals=2048):
-    feats = activations_np.reshape(activations_np.shape[0], -1)
+def generate_activations_prelayer_batch(net,layer,images,pool_transform=None):
+    activations = []
+    def hook_fn(m, i, o):
+        activations.append(i[0])
+    handle = layer.register_forward_hook(hook_fn)
+    if pool_transform is not None:
+        images = pool_transform(images)
+    output = net(images)
+    handle.remove()
+    return activations[0]
+
+def get_eigenspectrum(activations_np,max_eigenvals=2048):
+    feats = activations_np.reshape(activations_np.shape[0],-1)
     feats_center = feats - feats.mean(axis=0)
     pca = PCA(n_components=min(max_eigenvals, feats_center.shape[0], feats_center.shape[1]), svd_solver='full')
     pca.fit(feats_center)

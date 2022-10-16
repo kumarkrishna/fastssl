@@ -4,8 +4,10 @@ import torch.nn.functional as F
 
 from fastssl.models.ssl import SSL
 from fastssl.models.backbone import BackBone
+from fastssl.data.cifar_transforms import CifarTransform
 from fastssl.data.imagenet_dataloaders import TransformGPU
 
+ssl_transform = CifarTransform()
 
 def off_diagonal(x):
     # return a flattened view of the off-diagonal elements of a square matrix
@@ -32,7 +34,9 @@ def BarlowTwinLoss(model, inp, _lambda=None):
     # x1, x2 = TransformGPU(x1, x2)
 
     bsz = x1.shape[0]
-
+    # x,_ = inp
+    # x1,x2 = ssl_transform(x.cuda(non_blocking=True))
+    # bsz = x1.shape[0]
     
     # forward pass
     z1 = model(x1)
@@ -54,8 +58,14 @@ class BarlowTwins(SSL):
     """
     Modified ResNet50 architecture to work with CIFAR10
     """
-    def __init__(self, bkey='resnet50proj', dataset='cifar10', projector_dim=128, hidden_dim=128):
+    def __init__(self, bkey='resnet50proj', projector_dim=128, dataset='cifar10', hidden_dim=None):
         super(BarlowTwins, self).__init__()
+        self.projector_dim = projector_dim
+        if hidden_dim is None:
+            self.hidden_dim = projector_dim
+        else:
+            assert hidden_dim==projector_dim, "Implementation only for hidden_dim ({}) = projector_dim ({})".format(hidden_dim,projector_dim)
+            self.hidden_dim = hidden_dim
         self.dataset = dataset 
         self.bkey = bkey
         print(f'Network defined with projector dim {projector_dim} and hidden dim {hidden_dim}')

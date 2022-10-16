@@ -34,4 +34,3 @@ python scripts/train_model.py --config-file configs/cc_classifier.yaml --trainin
 # python train_classifier.py --dataset cifar10 --epochs 200
 # python train_classifier.py --dataset cifar10 --epochs 200 --use_projector True
 # cp $SLURM_TMPDIR/*.csv saved_models/
-# cp $SLURM_TMPDIR/*.pth saved_models/
