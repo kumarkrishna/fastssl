@@ -388,6 +388,21 @@ def train(model, loaders, optimizer, loss_fn, args):
             param.requires_grad = False
 
     for epoch in range(1, args.epochs+1):
+        if epoch==1 and args.track_alpha:
+                # compute alpha before training starts!
+                activations = powerlaw.generate_activations_prelayer(net=model,
+                                                                    layer=model.backbone.proj,
+                                                                    data_loader=loaders['test'],
+                                                                    use_cuda=True)
+                activations_eigen = powerlaw.get_eigenspectrum(activations)
+                alpha,ypred,R2,R2_100 = powerlaw.stringer_get_powerlaw(activations_eigen,
+                                                                    trange=np.arange(5,80))
+                results['eigenspectrum'].append((epoch-1,activations_eigen))
+                results['alpha'].append((epoch-1,alpha))
+                results['R2'].append((epoch-1,R2))
+                results['R2_100'].append((epoch-1,R2_100))
+
+
         train_loss = train_step(
             model=model,
             dataloader=loaders['train'],
@@ -418,7 +433,7 @@ def train(model, loaders, optimizer, loss_fn, args):
                                                                     use_cuda=True)
                 activations_eigen = powerlaw.get_eigenspectrum(activations)
                 alpha,ypred,R2,R2_100 = powerlaw.stringer_get_powerlaw(activations_eigen,
-                                                                    trange=np.arange(3,100))
+                                                                    trange=np.arange(5,80))
                 results['eigenspectrum'].append((epoch,activations_eigen))
                 results['alpha'].append((epoch,alpha))
                 results['R2'].append((epoch,R2))
