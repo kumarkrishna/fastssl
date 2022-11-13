@@ -422,8 +422,10 @@ def train(model, loaders, optimizer, loss_fn, args):
             results['test_acc_5'].append(acc_5)
         elif epoch % args.log_interval == 0:
             ckpt_path = gen_ckpt_path(args, epoch=epoch)
+            state = dict(epoch=epoch + 1, model=model.state_dict(),
+                             optimizer=optimizer.state_dict())
             torch.save(
-                model.state_dict(),
+                state,
                 ckpt_path)
             if args.track_alpha:
                 # compute alpha at intermediate training steps
