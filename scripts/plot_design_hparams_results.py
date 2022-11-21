@@ -14,7 +14,7 @@ calc_new_alpha = True
 R2_thresh = 0.95
 
 dataset_ssl = 'stl10'
-dataset_classifier = 'cifar10'
+dataset_classifier = 'stl10'
 
 ckpt_dir = 'checkpoints_design_hparams_{}'.format(dataset_ssl)
 
@@ -45,9 +45,11 @@ def plot_alpha_fit(data_dict,trange,lamda_val,pdim_val):
 	eigen = data_dict['eigenspectrum']
 	al,ypred,r2,r2_range = stringer_get_powerlaw(eigen,trange)
 	print(r2,r2_range)
-	plt.loglog(np.arange(1,1+200),eigen[:200])
-	plt.loglog(np.arange(1,1+200),ypred[:200])
+	fin_range = 1000
+	plt.loglog(np.arange(1,1+fin_range),eigen[:fin_range])
+	plt.loglog(np.arange(1,1+fin_range),ypred[:fin_range])
 	plt.title("lamda = {:.2e}, pdim = {}, alpha={:.3f}".format(lamda_val,pdim_val,al))
+	plt.grid('on')
 	plt.show()
 
 
@@ -184,7 +186,8 @@ for fidx,file in enumerate(tqdm(files_sorted)):
 			accuracy_dict[pdim_val][lamda_val].append(final_test_acc)
 			best_accuracy_dict[pdim_val][lamda_val].append(best_test_acc)
 		if flag_debug: 
-			plot_alpha_fit(linear_dict,trange=np.arange(3,100),lamda_val=lamda_val,pdim_val=pdim_val)
+			if pdim_val < 2048: continue
+			plot_alpha_fit(linear_dict,trange=np.arange(11,50),lamda_val=lamda_val,pdim_val=pdim_val)
 			breakpoint()
 		
 	except:
