@@ -6,10 +6,12 @@ from linclab_utils import plot_utils
 from tqdm import tqdm
 from sklearn.metrics import r2_score
 
+from fastssl.utils import powerlaw as powerlaw
+
 plot_utils.linclab_plt_defaults(font="Arial",fontdir=os.path.expanduser('~')+"/Projects/fonts") 	# Run locally, not from cluster
 
 plot_abs = False
-flag_debug = False
+flag_debug = True
 calc_new_alpha = True
 R2_thresh = 0.95
 
@@ -18,32 +20,9 @@ dataset_classifier = 'stl10'
 
 ckpt_dir = 'checkpoints_design_hparams_{}'.format(dataset_ssl)
 
-def stringer_get_powerlaw(ss, trange):
-    # COPIED FROM Stringer+Pachitariu 2018b github repo! (https://github.com/MouseLand/stringer-pachitariu-et-al-2018b/blob/master/python/utils.py)
-    ''' fit exponent to variance curve'''
-    logss = np.log(np.abs(ss))
-    y = logss[trange][:,np.newaxis]
-    trange += 1
-    nt = trange.size
-    x = np.concatenate((-np.log(trange)[:,np.newaxis], np.ones((nt,1))), axis=1)
-    w = 1.0 / trange.astype(np.float32)[:,np.newaxis]
-    b = np.linalg.solve(x.T @ (x * w), (w * x).T @ y).flatten()
-    
-    allrange = np.arange(0, ss.size).astype(int) + 1
-    x = np.concatenate((-np.log(allrange)[:,np.newaxis], np.ones((ss.size,1))), axis=1)
-    ypred = np.exp((x * b).sum(axis=1))
-    alpha = b[0]
-    max_range = 500 if len(ss)>=512 else len(ss) - 10   # subtracting 10 here arbitrarily because we want to avoid the last tail!
-    fit_R2 = r2_score(y_true=logss[trange[0]:max_range],y_pred=np.log(np.abs(ypred))[trange[0]:max_range])
-    try:
-        fit_R2_range = r2_score(y_true=logss[trange],y_pred=np.log(np.abs(ypred))[trange])
-    except:
-        fit_R2_range = None
-    return alpha, ypred, fit_R2, fit_R2_range
-
 def plot_alpha_fit(data_dict,trange,lamda_val,pdim_val):
 	eigen = data_dict['eigenspectrum']
-	al,ypred,r2,r2_range = stringer_get_powerlaw(eigen,trange)
+	al,ypred,r2,r2_range = powerlaw.stringer_get_powerlaw(eigen,trange)
 	print(r2,r2_range)
 	fin_range = 1000
 	plt.loglog(np.arange(1,1+fin_range),eigen[:fin_range])
@@ -164,9 +143,9 @@ for fidx,file in enumerate(tqdm(files_sorted)):
 					range_init = 11
 				else:
 					range_init = 5
-				alpha,ypred,R2,r2_range = stringer_get_powerlaw(eigen,np.arange(range_init,50))
+				alpha,ypred,R2,r2_range = powerlaw.stringer_get_powerlaw(eigen,np.arange(range_init,50))
 				if r2_range<R2_thresh:
-					alpha,ypred,R2,r2_range = stringer_get_powerlaw(eigen,np.arange(range_init,20))
+					alpha,ypred,R2,r2_range = powerlaw.stringer_get_powerlaw(eigen,np.arange(range_init,20))
 				R2_100 = r2_range
 			else:
 				alpha = linear_dict['alpha']
