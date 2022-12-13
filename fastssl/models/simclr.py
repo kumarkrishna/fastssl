@@ -42,7 +42,7 @@ def SimCLRLoss(model, inp, temperature=0.05):
     logits = similarity_scores - similarity_scores.max(dim=-1, keepdim=True).detach()
     exp_logits = torch.exp(logits) * (1 - torch.ones(2 * bsz)).cuda(non_blocking=True)
     
-    log_likelihood = - logits + log(exp_logits.sum(dim=-1, keepdim=True) + eps)
+    log_likelihood = - logits + torch.log(exp_logits.sum(dim=-1, keepdim=True) + eps)
     
     loss = (log_likelihood * mask).sum()/ mask.sum()
 
