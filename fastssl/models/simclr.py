@@ -8,7 +8,7 @@ import torch.nn.functional as F
 from fastssl.models.ssl import SSL
 from fastssl.models.backbone import BackBone
 
-def SimCLRLoss(model, inp, temperature=0.05):
+def SimCLRLoss(model, inp, _temperature=0.05):
     """
     Peform model forward pass and compute the BYOL loss.
     Args:
@@ -23,7 +23,7 @@ def SimCLRLoss(model, inp, temperature=0.05):
     (x1, x2), _ = inp
     x1, x2 = x1.cuda(non_blocking=True), x2.cuda(non_blocking=True)
     bsz = x1.shape[0]
-   
+    
     # forward pass
     z1 = model(x1)   #NXD
     z2 = model(x2)   #NXD
@@ -33,14 +33,17 @@ def SimCLRLoss(model, inp, temperature=0.05):
     
     all_z_norm = torch.cat([z1_norm, z2_norm], dim=0)
     
-    similarity_scores = (all_z_norm @ all_z_norm.T) / temperature
+    similarity_scores = (all_z_norm @ all_z_norm.T) / _temperature
     eps = 1e-9
     
     ones = torch.ones(bsz)
     mask = (torch.diag(ones, bsz) + torch.diag(ones, -bsz)).cuda(non_blocking=True)
     
-    logits = similarity_scores - similarity_scores.max(dim=-1, keepdim=True).detach()
-    exp_logits = torch.exp(logits) * (1 - torch.ones(2 * bsz)).cuda(non_blocking=True)
+    # subtract max value for stability
+    logits = similarity_scores - similarity_scores.max(dim=-1, keepdim=True)[0].detach()
+    # remove the diagonal entries of all 1./_temperature because they are cosine
+    # similarity of one image to itself.
+    exp_logits = torch.exp(logits) * (1 - torch.eye(2 * bsz)).cuda(non_blocking=True)
     
     log_likelihood = - logits + torch.log(exp_logits.sum(dim=-1, keepdim=True) + eps)
     
