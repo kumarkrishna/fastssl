@@ -44,7 +44,7 @@ wdidx=$((idx12%lenLR))
 
 dataset='cifar10'
 temp=${temp_arr[$tidx]}
-projector_dim=${temp_arr[$pidx]}
+projector_dim=${proj_arr[$pidx]}
 batch_size=${bsz_arr[$bidx]}
 lr=${lr_arr[$lridx]}
 wd=${wd_arr[$wdidx]}
