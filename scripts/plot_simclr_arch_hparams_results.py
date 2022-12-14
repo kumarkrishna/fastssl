@@ -140,6 +140,9 @@ for aidx,arch in enumerate(arch_arr):
         try:
             temp_val = float(os.path.basename(file).split('temp_')[-1].split('_')[0])
             pdim_val = float(os.path.basename(file).split('pdim_')[-1].split('_')[0])
+            # uncomment below to check hparam sweep for bsz vs Temp (pdim=512)
+            if pdim_val != 512: continue
+            pdim_val = float(os.path.basename(file).split('bsz_')[-1].split('_')[0])
             # breakpoint()
             temp_arr[temp_val]=True
             pdim_arr[pdim_val]=True
