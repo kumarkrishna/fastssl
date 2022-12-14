@@ -102,7 +102,7 @@ def plot_scatterplot(attribute1_dict,attribute1_label,attribute2_dict,attribute2
         if color is None: color='blue'
         plt.errorbar(x=attr1_arr,y=attr2_arr,xerr=attr1_err_arr,yerr=attr2_err_arr,marker=markers_arr[pidx%len(markers_arr)],
                     color=color,ls='',label='pdim={}'.format(int(pdim)))
-    plt.title('{} vs {}'.format(attribute1_label,attribute2_label))
+    plt.title('SimCLR {} vs {}'.format(attribute1_label,attribute2_label))
     plt.xlabel('{}'.format(attribute1_label))
     plt.ylabel('{}'.format(attribute2_label))
     plt.legend()
