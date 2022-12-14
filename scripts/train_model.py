@@ -205,9 +205,13 @@ def build_model(args=None):
             'projector_dim': training.projector_dim,
             }
         
-        if training.algorithm in ('byol', 'SimCLR'):
+        if training.algorithm in ('byol'):
             model_args['hidden_dim'] = training.hidden_dim
             model_cls = byol.BYOL
+        elif training.algorithm in ('SimCLR'):
+            # setting projector dim and hidden dim the same for SimCLR projector
+            model_args['hidden_dim'] = training.projector_dim
+            model_cls = simclr.SimCLR
         else:
             model_args['hidden_dim'] = training.projector_dim
             model_cls = bt.BarlowTwins
