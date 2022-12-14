@@ -1,19 +1,16 @@
 training:
   dataset: 'cifar10'
   datadir: '/network/datasets/{dataset}.var/{dataset}_torchvision/'
-  train_dataset: '/network/projects/_groups/linclab_users/ffcv/ffcv_datasets/{dataset}/train.beton'
+  train_dataset: '/network/projects/_groups/linclab_users/ffcv/ffcv_datasets/{dataset}/doubleImage_train.beton'
   val_dataset: '/network/projects/_groups/linclab_users/ffcv/ffcv_datasets/{dataset}/test.beton'
   batch_size: 512
-  epochs: 200
-  lambd: 0.0078125
+  epochs: 100
   temperature: 0.1
   projector_dim: 128
   seed: 42
-  algorithm: 'linear'
-  model: 'resnet50feat'
+  algorithm: 'SimCLR'
+  model: 'resnet50proj'
   num_workers: 4
   ckpt_dir: 'checkpoints'
   use_autocast: True
-eval:
-  train_algorithm: 'ssl'
-  epoch: 100
+  log_interval: 100

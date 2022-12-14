@@ -8,6 +8,7 @@ results/
 checkpoints/
 old_checkpoints/
 checkpoints*/
+simclr_checkpoints*/
 debug_imgs/
 ._*
 sbatch_out/

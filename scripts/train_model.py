@@ -21,7 +21,7 @@ import os
 
 from pathlib import Path
 import pickle
-from ray import tune
+# from ray import tune
 
 import time, copy
 import torch
@@ -36,7 +36,7 @@ from fastargs import Section, Param
 
 from fastssl.data import cifar_ffcv, cifar_classifier_ffcv, cifar_pt, stl_ffcv, stl10_pt, stl_classifier_ffcv
 from fastssl.models import barlow_twins as bt
-from fastssl.models import byol #, simclr
+from fastssl.models import byol, simclr
 
 from fastssl.utils.base import set_seeds, get_args_from_config, merge_with_args
 import fastssl.utils.powerlaw as powerlaw
@@ -62,6 +62,8 @@ Section('training', 'Fast CIFAR-10 training').params(
         float, 'lambd for BarlowTwins', default=1/128),
     momentum_tau=Param(
         float, 'momentum_tau for BYOL', default=0.01),
+    temperature=Param(
+        float, 'temperature for SimCLR', default=0.01),
     seed=Param(
         int, 'seed', default=1),
     algorithm=Param(
@@ -133,10 +135,22 @@ def build_dataloaders(
             raise Exception("Algorithm not implemented")
 
 
-def gen_ckpt_path(args, train_algorithm='ssl', epoch=100, prefix='exp', suffix='pth'):
+def gen_ckpt_path(
+    args, 
+    eval_args,  
+    epoch=100, 
+    prefix='exp', 
+    suffix='pth'
+):
     if suffix=='pth':
         main_dir = os.environ['SLURM_TMPDIR']
         ckpt_dir = main_dir
+        ckpt_path = os.path.join(ckpt_dir, '{}_{}_{}{}.{}'.format(
+            prefix, 
+            eval_args.train_algorithm if 'linear' in args.algorithm else args.algorithm, 
+            epoch, 
+            '_seed_{}'.format(args.seed) if 'linear' in eval_args.train_algorithm else '',
+            suffix))
     else:
         main_dir = args.ckpt_dir
         if 'shallow' in args.model:
@@ -144,14 +158,33 @@ def gen_ckpt_path(args, train_algorithm='ssl', epoch=100, prefix='exp', suffix='
             model_name = model_name.replace('proj','')
             model_name = model_name.replace('feat','')
             main_dir = os.path.join(main_dir,model_name)
-        ckpt_dir = os.path.join(
-            main_dir, 'lambd_{:.6f}_pdim_{}{}_lr_{}_wd_{}'.format(args.lambd, args.projector_dim,'_no_autocast' if not args.use_autocast else '',
-                                                                args.lr, args.weight_decay))
+        if args.algorithm == 'linear':
+            dir_algorithm = eval_args.train_algorithm
+        else:
+            dir_algorithm = args.algorithm
+        if dir_algorithm in ['ssl','BarlowTwins']:
+            ckpt_dir = os.path.join(
+                main_dir, 'lambd_{:.6f}_pdim_{}{}_lr_{}_wd_{}'.format(
+                            args.lambd,
+                            args.projector_dim,
+                            '_no_autocast' if not args.use_autocast else '',
+                            args.lr, args.weight_decay))
+        elif dir_algorithm in ['SimCLR']:
+            ckpt_dir = os.path.join(
+                main_dir, 'temp_{:.3f}_pdim_{}{}_bsz_{}_lr_{}_wd_{}'.format(
+                            args.temperature,
+                            args.projector_dim,
+                            '_no_autocast' if not args.use_autocast else '',
+                            args.batch_size,args.lr, args.weight_decay))
+        # create ckpt file name
+        ckpt_path = os.path.join(ckpt_dir, '{}_{}_{}{}.{}'.format(
+            prefix, 
+            args.algorithm, 
+            epoch, 
+            '_seed_{}'.format(args.seed) if 'linear' in args.algorithm else '',
+            suffix))
     # create directory if it doesn't exist
     Path(ckpt_dir).mkdir(parents=True, exist_ok=True)
-    # create ckpt file name
-    ckpt_path = os.path.join(ckpt_dir, '{}_{}_{}{}.{}'.format(
-        prefix, train_algorithm, epoch, '_seed_{}'.format(args.seed) if 'linear' in train_algorithm else '',suffix))
     return ckpt_path 
 
 
@@ -161,6 +194,7 @@ def build_model(args=None):
         model : model to train
     """
     training = args.training
+    eval = args.eval
 
     if training.algorithm in ('BarlowTwins', 'SimCLR', 'ssl', 'byol'):
         model_args = {
@@ -179,7 +213,7 @@ def build_model(args=None):
     elif training.algorithm == 'linear':
         ckpt_path = gen_ckpt_path(
             training,
-            train_algorithm=args.eval.train_algorithm,
+            eval,
             epoch=args.eval.epoch)
         model_args = {
             'bkey': training.model, # supports : resnet50feat, resnet50proj
@@ -200,6 +234,8 @@ def build_loss_fn(args=None):
         return partial(bt.BarlowTwinLoss, _lambda=args.lambd)
     elif args.algorithm == 'byol':
         return byol.BYOLLoss
+    elif args.algorithm == 'SimCLR':
+        return partial(simclr.SimCLRLoss, _temperature=args.temperature)
     elif args.algorithm == 'linear':
         def classifier_xent(model, inp):
             x, y = inp
@@ -292,9 +328,9 @@ def train_step(model, dataloader, args, target_model=None, optimizer=None, loss_
         if args.algorithm == 'byol':
             byol.update_state_dict(target_model, model.state_dict(), args.momentum_tau)
 
-        import ray
-        if ray.tune.is_session_enabled():
-            tune.report(epoch=epoch, loss=total_loss/num_batches)
+        # import ray
+        # if ray.tune.is_session_enabled():
+        #     tune.report(epoch=epoch, loss=total_loss/num_batches)
         train_bar.set_description(
             'Train Epoch: [{}/{}] Loss: {:.4f}'.format(epoch, args.epochs, total_loss / num_batches))
     return total_loss / num_batches
@@ -331,7 +367,7 @@ def debug_plot(activations_eigen,alpha,ypred,R2,R2_100,figname):
     plt.close('all')
 
 
-def train(model, loaders, optimizer, loss_fn, args):
+def train(model, loaders, optimizer, loss_fn, args, eval_args):
     if args.track_alpha:
         results = {'train_loss': [], 
                     'test_acc_1': [], 
@@ -417,11 +453,14 @@ def train(model, loaders, optimizer, loss_fn, args):
 
 
         if args.algorithm == 'linear':
-            acc_1, acc_5 = eval_step(model, loaders['test'], epoch=epoch, epochs=args.epochs)
+            acc_1, acc_5 = eval_step(model, 
+                                    loaders['test'], 
+                                    epoch=epoch, 
+                                    epochs=args.epochs)
             results['test_acc_1'].append(acc_1)
             results['test_acc_5'].append(acc_5)
         elif epoch % args.log_interval == 0:
-            ckpt_path = gen_ckpt_path(args, epoch=epoch)
+            ckpt_path = gen_ckpt_path(args, eval_args, epoch=epoch)
             state = dict(epoch=epoch + 1, model=model.state_dict(),
                              optimizer=optimizer.state_dict())
             torch.save(
@@ -449,6 +488,7 @@ def run_experiment(args):
     # num_cpus = int(os.environ.get('SLURM_CPUS_PER_TASK'))
     # ray.init(num_cpus=2)
     training = args.training
+    eval = args.eval
 
     set_seeds(training.seed)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -477,10 +517,13 @@ def run_experiment(args):
     print("CONSTRUCTED LOSS FUNCTION")
 
     # train the model with default=BT
-    results = train(model, loaders, optimizer, loss_fn, training)
+    results = train(model, loaders, optimizer, loss_fn, training, eval)
 
     # save results
-    save_path = gen_ckpt_path(training, training.algorithm, training.epochs, 'results_{}_early_alpha'.format(training.dataset), 'npy')
+    save_path = gen_ckpt_path(training,
+                            eval,
+                            training.epochs, 
+                            'results_{}_alpha'.format(training.dataset), 'npy')
     # with open(save_path, 'wb') as f:
         # pickle.dump(results, f)
     np.save(save_path,results)
