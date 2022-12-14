@@ -39,8 +39,8 @@ pidx=$((idx1234/lenMul123))
 idx123=$((idx1234%lenMul123))
 bidx=$((idx123/lenMul12))
 idx12=$((idx123%lenMul12))
-lridx=$((idx12/lenLR))
-wdidx=$((idx12%lenLR))
+lridx=$((idx12/lenWD))
+wdidx=$((idx12%lenWD))
 
 dataset='cifar10'
 temp=${temp_arr[$tidx]}
