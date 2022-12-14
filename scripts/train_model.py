@@ -110,9 +110,10 @@ def build_dataloaders(
             return cifar_ffcv(
                 train_dataset, val_dataset, batch_size, num_workers)
         elif algorithm == 'linear':
+            default_linear_bsz = 512
             # dataloader for classifier
             return cifar_classifier_ffcv(
-                train_dataset, val_dataset, batch_size, num_workers)
+                train_dataset, val_dataset, default_linear_bsz, num_workers)
         else:
             raise Exception("Algorithm not implemented")
     elif dataset == 'stl10':
@@ -125,8 +126,9 @@ def build_dataloaders(
             return stl_ffcv(
                 train_dataset, val_dataset, batch_size, num_workers)
         elif algorithm == 'linear':
+            default_linear_bsz = 512
             return stl_classifier_ffcv(
-                train_dataset, val_dataset, batch_size, num_workers)
+                train_dataset, val_dataset, default_linear_bsz, num_workers)
                 # datadir,
                 # splits=["train", "test"],
                 # batch_size=batch_size,
