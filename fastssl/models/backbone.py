@@ -46,6 +46,8 @@ class BackBone(nn.Module):
         in_ch = 3
         out_ch = 16
         for lidx in range(layers):
+            in_ch = min(512,in_ch)
+            out_ch = min(512,out_ch)
             module = [nn.Conv2d(in_ch,out_ch,kernel_size=3, stride=1,padding=1,bias=False),
                         nn.BatchNorm2d(out_ch),
                         nn.ReLU()]
