@@ -110,9 +110,10 @@ def build_dataloaders(
             return cifar_ffcv(
                 train_dataset, val_dataset, batch_size, num_workers)
         elif algorithm == 'linear':
+            default_linear_bsz = 512
             # dataloader for classifier
             return cifar_classifier_ffcv(
-                train_dataset, val_dataset, batch_size, num_workers)
+                train_dataset, val_dataset, default_linear_bsz, num_workers)
         else:
             raise Exception("Algorithm not implemented")
     elif dataset == 'stl10':
@@ -125,8 +126,9 @@ def build_dataloaders(
             return stl_ffcv(
                 train_dataset, val_dataset, batch_size, num_workers)
         elif algorithm == 'linear':
+            default_linear_bsz = 512
             return stl_classifier_ffcv(
-                train_dataset, val_dataset, batch_size, num_workers)
+                train_dataset, val_dataset, default_linear_bsz, num_workers)
                 # datadir,
                 # splits=["train", "test"],
                 # batch_size=batch_size,
@@ -153,11 +155,10 @@ def gen_ckpt_path(
             suffix))
     else:
         main_dir = args.ckpt_dir
-        if 'shallow' in args.model:
-            model_name = args.model
-            model_name = model_name.replace('proj','')
-            model_name = model_name.replace('feat','')
-            main_dir = os.path.join(main_dir,model_name)
+        model_name = args.model
+        model_name = model_name.replace('proj','')
+        model_name = model_name.replace('feat','')
+        main_dir = os.path.join(main_dir,model_name)
         if args.algorithm == 'linear':
             dir_algorithm = eval_args.train_algorithm
         else:
@@ -203,9 +204,13 @@ def build_model(args=None):
             'projector_dim': training.projector_dim,
             }
         
-        if training.algorithm in ('byol', 'SimCLR'):
+        if training.algorithm in ('byol'):
             model_args['hidden_dim'] = training.hidden_dim
             model_cls = byol.BYOL
+        elif training.algorithm in ('SimCLR'):
+            # setting projector dim and hidden dim the same for SimCLR projector
+            model_args['hidden_dim'] = training.projector_dim
+            model_cls = simclr.SimCLR
         else:
             model_args['hidden_dim'] = training.projector_dim
             model_cls = bt.BarlowTwins

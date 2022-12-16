@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #SBATCH --array=0-59%60
 #SBATCH --partition=long
-#SBATCH --gres=gpu:2g.20gb:1
+#SBATCH --gres=gpu:rtx8000:1
 #SBATCH --mem=16GB
 #SBATCH --time=6:00:00
 #SBATCH --cpus-per-gpu=4
@@ -23,19 +23,13 @@ temp_arr=(0.01 0.05 0.1 0.2 0.5)
 proj_arr=(128 256 512)
 bsz_arr=(128 256 512 1024)
 
-# arch_layers_arr=('2' '4' '6')
-arch_layers_arr=('8')
 
-lenA=${#arch_layers_arr[@]}
 len1=${#temp_arr[@]}
 len2=${#proj_arr[@]}
 len3=${#bsz_arr[@]}
-lenMul123=$((len1*len2*len3))
 lenMul23=$((len2*len3))
-aidx=$((SLURM_ARRAY_TASK_ID/lenMul123))
-idx123=$((SLURM_ARRAY_TASK_ID%lenMul123))
-idx1=$((idx123/lenMul23))
-idx23=$((idx123%lenMul23))
+idx1=$((SLURM_ARRAY_TASK_ID/lenMul23))
+idx23=$((SLURM_ARRAY_TASK_ID%lenMul23))
 idx2=$((idx23/len3))
 idx3=$((idx23%len3))
 
@@ -45,10 +39,10 @@ projector_dim=${proj_arr[$idx2]}
 batch_size=${bsz_arr[$idx3]}
 
 checkpt_dir='simclr_checkpoints_arch_hparams_'$dataset
-model_name=shallowConvproj_${arch_layers_arr[$aidx]} 
+model_name=resnet50proj 
 python scripts/train_model.py --config-file configs/cc_SimCLR.yaml --training.temperature=$temp --training.projector_dim=$projector_dim --training.model=$model_name --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir --training.batch_size=$batch_size
 
-model_name=shallowConvfeat_${arch_layers_arr[$aidx]} 
+model_name=resnet50feat
 dataset='cifar10'
 python scripts/train_model.py --config-file configs/cc_classifier.yaml --eval.train_algorithm='SimCLR' --training.temperature=$temp --training.projector_dim=$projector_dim --training.model=$model_name --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir --training.seed=1 --training.batch_size=$batch_size
 python scripts/train_model.py --config-file configs/cc_classifier.yaml --eval.train_algorithm='SimCLR' --training.temperature=$temp --training.projector_dim=$projector_dim --training.model=$model_name --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir --training.seed=2 --training.batch_size=$batch_size

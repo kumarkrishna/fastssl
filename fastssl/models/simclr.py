@@ -50,3 +50,31 @@ def SimCLRLoss(model, inp, _temperature=0.05):
     loss = (log_likelihood * mask).sum()/ mask.sum()
 
     return loss
+
+class SimCLR(SSL):
+    """
+    Modified ResNet50 architecture to work with CIFAR10
+    """
+    def __init__(self, bkey='resnet50proj', projector_dim=128, dataset='cifar10', hidden_dim=512):
+        super(SimCLR, self).__init__()
+        self.dataset = dataset 
+        self.bkey = bkey
+
+        self.backbone = BackBone(
+            name=self.bkey, dataset=self.dataset, 
+            projector_dim=projector_dim, hidden_dim=hidden_dim
+        )
+    
+    def forward(self, x):
+        projections = self._unnormalized_project(x)
+        return F.normalize(projections, dim=-1)
+
+    def _unnormalized_project(self, x):
+        feats = self._unnormalized_feats(x)
+        projections = self.backbone.proj(feats)
+        return projections
+
+    def _unnormalized_feats(self, x):
+        x = self.backbone(x)
+        feats = torch.flatten(x, start_dim=1)
+        return feats
