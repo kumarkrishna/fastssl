@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 #SBATCH --account=rrg-bengioy-ad
-#SBATCH --array=0-1
+#SBATCH --array=0-29
 #SBATCH --gres=gpu:4
 #SBATCH --mem=32GB
-#SBATCH --time=4:00:00
+#SBATCH --time=7-00:00:00
 #SBATCH --cpus-per-gpu=4
 #SBATCH --output=output/exp_run_imagenet_hparam_sweep.%A.%a.out
 #SBATCH --error=sbatch_err/exp_run_imagenet_hparam_sweep.%A.%a.err

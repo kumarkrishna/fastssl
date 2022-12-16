@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 
-cluster_name=beluga
+#export LD_PRELOAD=~/Projects/SSL_alpha/fastssl/configs/hack.so 	# Olexa's hack to avoid INTERNAL ASSERT ERROR on Pytorch 1.10
+## Do some more exports to avoid getting stuck at PCA
+#export MKL_THREADING_LAYER=TBB
+
+cluster_name=mila
 compute_node_data_dir=$SLURM_TMPDIR/ImageNet
 
 if [[ $cluster_name == "beluga" || $cluster_name == "narval" ]]; then
@@ -16,7 +20,7 @@ if [[ $cluster_name == "beluga" || $cluster_name == "narval" ]]; then
 elif [ $cluster_name == "mila" ]; then
     module load anaconda/3
     conda activate ffcv
-    local_data_dir=~/scratch/Imagenet/ffcv                 #for mila
+    local_data_dir=/network/datasets/imagenet                #for mila
     echo 'In mila'
 fi
 
@@ -39,7 +43,7 @@ datadir=$compute_node_data_dir
 imagenet_train=$compute_node_data_dir/ffcv/train_256_0.5_90.ffcv
 imagenet_val=$compute_node_data_dir/ffcv/val_256_0.5_90.ffcv
 dataset=imagenet
-batch_size=36
+batch_size=92
 log_interval=1
 
 python -m scripts.train_model_distributed \

@@ -3,6 +3,13 @@
   <component name="PublishConfigData" autoUpload="Always" serverName="arnab39@beluga.computecanada.ca:22 password" remoteFilesAllowedToDisappearOnAutoupload="false" confirmBeforeUploading="false">
     <option name="confirmBeforeUploading" value="false" />
     <serverData>
+      <paths name="arnab.mondal@login.server.mila.quebec:2222">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/home/mila/a/arnab.mondal/fastssl" local="$PROJECT_DIR$" web="/" />
+          </mappings>
+        </serverdata>
+      </paths>
       <paths name="arnab39@beluga.computecanada.ca:22 password">
         <serverdata>
           <mappings>

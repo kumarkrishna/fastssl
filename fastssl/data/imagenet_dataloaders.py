@@ -5,12 +5,15 @@ from typing import List
 from ffcv.fields.decoders import IntDecoder
 from ffcv.loader import Loader, OrderOption
 from ffcv.pipeline.operation import Operation
-from ffcv.transforms import RandomHorizontalFlip, Squeeze, ToDevice, ToTensor, ToTorchImage
-from ffcv.fields.rgb_image import CenterCropRGBImageDecoder
+from ffcv.transforms import RandomHorizontalFlip, Squeeze, ToDevice, ToTensor, ToTorchImage, NormalizeImage
+from ffcv.fields.rgb_image import CenterCropRGBImageDecoder, RandomResizedCropRGBImageDecoder
 from fastssl.data.custom_transforms import TransformImagenet, GaussianBlur, Solarization
 import torchvision.transforms as transforms
 from PIL import Image
+import numpy as np
 
+IMAGENET_MEAN = np.array([0.485, 0.456, 0.406]) * 255
+IMAGENET_STD = np.array([0.229, 0.224, 0.225]) * 255
 DEFAULT_CROP_RATIO = 224/256
 
 def get_sseval_imagenet_ffcv_dataloaders(
@@ -83,6 +86,46 @@ def get_ssltrain_imagenet_ffcv_dataloaders(
                                pipelines={
                                    'image': image_pipeline,
                                }
+                               )
+    return loaders
+
+def get_ssltrain_imagenet_ffcv_dataloaders_distributed(
+        train_dataset=None, batch_size=None, num_workers=None, world_size=None, gpu=None
+):
+    paths = {
+        'train': train_dataset,
+    }
+    this_device = f'cuda:{gpu}'
+    loaders = {}
+    assert batch_size % world_size == 0
+    per_device_batch_size = batch_size // world_size
+
+    for name in ['train']:
+        image_pipeline: List[Operation] = [
+            RandomResizedCropRGBImageDecoder((224, 224)),
+            RandomHorizontalFlip(),
+            #CenterCropRGBImageDecoder((224, 224), ratio=DEFAULT_CROP_RATIO),
+            NormalizeImage(IMAGENET_MEAN, IMAGENET_STD, np.float16),
+            ToTensor(),
+            ToDevice(torch.device(this_device), non_blocking=True),
+            ToTorchImage(),
+            #torchvision.transforms.ConvertImageDtype(torch.float16),
+            # torchvision.transforms.Normalize(mean=[0.485, 0.456, 0.406],
+            #                               std=[0.229, 0.224, 0.225])
+
+            #ToDevice(torch.device(this_device), non_blocking=True)
+        ]
+
+        loaders[name] = Loader(paths[name],
+                               batch_size=per_device_batch_size,
+                               num_workers=num_workers,
+                               order=OrderOption.RANDOM,  #OrderOption.SEQUENTIAL
+                               drop_last=(name == 'train'),
+                               pipelines={
+                                   'image': image_pipeline,
+                               },
+                               distributed=True,
+                               os_cache=True
                                )
     return loaders
 

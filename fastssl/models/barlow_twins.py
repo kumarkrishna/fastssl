@@ -27,9 +27,12 @@ def BarlowTwinLoss(model, inp, _lambda=None):
     """
 
     # generate samples from tuple
-    (x1, x2), _ = inp
-    x1, x2 = x1.cuda(non_blocking=True), x2.cuda(non_blocking=True)
+    #(x1, x2), _ = inp
+    # x1, x2 = x1.cuda(non_blocking=True), x2.cuda(non_blocking=True)
     # x1, x2 = TransformGPU(x1, x2)
+    x, _ = inp
+    x1, x2 = x, x
+    x1, x2 = x1.cuda(non_blocking=True), x2.cuda(non_blocking=True)
 
     bsz = x1.shape[0]
 

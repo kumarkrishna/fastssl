@@ -30,7 +30,8 @@ from torch import nn, optim
 
 from fastargs import Section, Param
 
-from fastssl.data import get_ssltrain_imagenet_pytorch_dataloaders_distributed, get_sseval_imagenet_ffcv_dataloaders
+from fastssl.data import get_ssltrain_imagenet_pytorch_dataloaders_distributed, \
+    get_sseval_imagenet_ffcv_dataloaders, get_ssltrain_imagenet_ffcv_dataloaders_distributed
 import fastssl.models.barlow_twins as bt
 from fastssl.utils.base import set_seeds, get_args_from_config
 import fastssl.utils.powerlaw as powerlaw
@@ -48,7 +49,7 @@ Section('training', 'Fast distributed imagenet training').params(
     batch_size=Param(
         int, 'batch-size', default=512),
     epochs=Param(
-        int, 'epochs', default=100),
+        int, 'epochs', default=50),
     learning_rate_weights=Param(
         float, 'learning-rate weights', default=0.2),
     learning_rate_biases=Param(
@@ -93,9 +94,13 @@ def build_dataloaders(
         val_dataset=None,
         batch_size=128,
         num_workers=2,
-        world_size=None
+        world_size=None,
+        gpu=None
 ):
         if algorithm == 'ssl':
+            # return get_ssltrain_imagenet_ffcv_dataloaders_distributed(
+            #     train_dataset, batch_size, num_workers, world_size, gpu
+            # ), None
             return get_ssltrain_imagenet_pytorch_dataloaders_distributed(
                 datadir, batch_size, num_workers, world_size
             )
@@ -138,7 +143,6 @@ def build_model(args=None):
         }
         model_cls = bt.LinearClassifier
 
-    print(model_args, model_cls)
     model = model_cls(**model_args)
     model = model.to(memory_format=torch.channels_last)
     return model
@@ -181,6 +185,7 @@ def train_step(model, dataloader, optimizer=None, loss_fn=None, scaler=None, epo
         optimizer.zero_grad()
 
         ## forward
+        # with torch.autograd.set_detect_anomaly(True):
         if scaler:
             with autocast():
                 loss = loss_fn(model, inp, gpu)
@@ -197,6 +202,8 @@ def train_step(model, dataloader, optimizer=None, loss_fn=None, scaler=None, epo
         num_batches += 1
         train_bar.set_description(
             'Train Epoch: [{}/{}] Loss: {:.4f}'.format(epoch, epochs, total_loss / num_batches))
+        if num_batches == 200:
+            break
 
     return total_loss / num_batches
 
@@ -254,7 +261,7 @@ def train(model, loaders, optimizer, loss_fn, args, gpu, sampler, start_epoch):
         scaler = None
 
     for epoch in range(start_epoch, args.epochs):
-        sampler.set_epoch(epoch)
+        #sampler.set_epoch(epoch)
         train_loss = train_step(
             model=model,
             dataloader=loaders['train'],
@@ -284,6 +291,7 @@ def train(model, loaders, optimizer, loss_fn, args, gpu, sampler, start_epoch):
 
 
 def main_worker(gpu, train_args, eval_args):
+    print(f'In gpu {gpu}')
     args = Namespace()
     args.training = train_args
     args.eval = eval_args
@@ -343,7 +351,8 @@ def main_worker(gpu, train_args, eval_args):
         training.val_dataset,
         training.batch_size,
         training.num_workers,
-        training.world_size
+        training.world_size,
+        gpu
     )
     print("CONSTRUCTED DATA LOADERS")
 
@@ -359,6 +368,11 @@ def main_worker(gpu, train_args, eval_args):
 def BarlowTwinLoss(model, inp, gpu, _lambda=None):
 
     # generate samples from tuple
+    ## for ffcv for now
+    # x, _ = inp
+    # x1, x2 = x, x
+
+    ## for pytorch
     (x1, x2), _ = inp
     x1, x2 = x1.cuda(gpu, non_blocking=True), x2.cuda(gpu, non_blocking=True)
     bsz = x1.shape[0]
