@@ -11,14 +11,14 @@ plot_utils.linclab_plt_defaults(font="Arial",fontdir=os.path.expanduser('~')+"/P
 plot_abs = False
 flag_debug = False
 calc_new_alpha = True
-plot_colorplots = True
+plot_colorplots = False
 R2_thresh = 0.95
 dataset_ssl = 'cifar10'
 dataset_classifier = 'cifar10'
 ckpt_dir = 'simclr_checkpoints_arch_hparams_{}'.format(dataset_ssl)
-arch_arr = ['shallowConv_8','shallowConv_2','shallowConv_4','shallowConv_6']
+arch_arr = ['shallowConv_8','shallowConv_2','shallowConv_4','shallowConv_6','resnet50']
 # arch_arr = ['shallowConv_2','shallowConv_4']
-colors_arr = ['violet','darkorange','darkgreen','gold']
+colors_arr = ['violet','darkorange','darkgreen','gold','brown']
 
 def stringer_get_powerlaw(ss, trange):
     # COPIED FROM Stringer+Pachitariu 2018b github repo! (https://github.com/MouseLand/stringer-pachitariu-et-al-2018b/blob/master/python/utils.py)

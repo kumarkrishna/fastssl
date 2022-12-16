@@ -155,11 +155,10 @@ def gen_ckpt_path(
             suffix))
     else:
         main_dir = args.ckpt_dir
-        if 'shallow' in args.model:
-            model_name = args.model
-            model_name = model_name.replace('proj','')
-            model_name = model_name.replace('feat','')
-            main_dir = os.path.join(main_dir,model_name)
+        model_name = args.model
+        model_name = model_name.replace('proj','')
+        model_name = model_name.replace('feat','')
+        main_dir = os.path.join(main_dir,model_name)
         if args.algorithm == 'linear':
             dir_algorithm = eval_args.train_algorithm
         else:
