@@ -20,6 +20,8 @@ import numpy as np
 import os
 
 from pathlib import Path
+import pickle
+from ray import tune
 
 import time, copy
 import torch
@@ -27,13 +29,14 @@ from torch.cuda.amp import GradScaler, autocast
 from torch.nn import CrossEntropyLoss
 from torch.optim import Adam, SGD, lr_scheduler
 
+import torchvision
 from tqdm import tqdm
 
 from fastargs import Section, Param
 
-from fastssl.data import cifar_ffcv, cifar_classifier_ffcv, cifar_pt, stl10_pt, stl_classifier_ffcv, \
-    get_ssltrain_imagenet_ffcv_dataloaders, get_sseval_imagenet_ffcv_dataloaders, get_ssltrain_imagenet_pytorch_dataloaders
-from fastssl.models import barlow_twins, byol #, simclr
+from fastssl.data import cifar_ffcv, cifar_classifier_ffcv, cifar_pt, stl_ffcv, stl10_pt, stl_classifier_ffcv
+from fastssl.models import barlow_twins as bt
+from fastssl.models import byol #, simclr
 
 from fastssl.utils.base import set_seeds, get_args_from_config, merge_with_args
 import fastssl.utils.powerlaw as powerlaw
@@ -56,7 +59,7 @@ Section('training', 'Fast CIFAR-10 training').params(
     weight_decay=Param(
         float, 'weight_decay', default=1e-6),
     lambd=Param(
-        float, 'lambd for BarlowTwins', default=5e-3),
+        float, 'lambd for BarlowTwins', default=1/128),
     momentum_tau=Param(
         float, 'momentum_tau for BYOL', default=0.01),
     seed=Param(
@@ -66,7 +69,7 @@ Section('training', 'Fast CIFAR-10 training').params(
     model=Param(
         str, 'model to train', default='resnet50proj'),
     num_workers=Param(
-        int, 'num of CPU workers', default=3),
+        int, 'num of CPU workers', default=4),
     projector_dim=Param(
         int, 'projector dimension', default=128),
     hidden_dim=Param(
@@ -97,9 +100,11 @@ def build_dataloaders(
     num_workers=2):
     if 'cifar' in dataset:
         if algorithm in ('BarlowTwins', 'SimCLR', 'ssl', 'byol'):
-            return cifar_pt(
-                datadir, batch_size=batch_size, num_workers=num_workers
-            )
+            # return cifar_pt(
+            #     datadir, batch_size=batch_size, num_workers=num_workers)
+            # for ffcv cifar10 dataloader
+            return cifar_ffcv(
+                train_dataset, val_dataset, batch_size, num_workers)
         elif algorithm == 'linear':
             # dataloader for classifier
             return cifar_classifier_ffcv(
@@ -108,28 +113,22 @@ def build_dataloaders(
             raise Exception("Algorithm not implemented")
     elif dataset == 'stl10':
         if algorithm in ('BarlowTwins', 'SimCLR', 'ssl', 'byol'):
-            return stl10_pt(
-                datadir,
-                splits=["unlabeled"],
-                batch_size=batch_size,
-                num_workers=num_workers)
+            # return stl10_pt(
+            #     datadir,
+            #     splits=["unlabeled"],
+            #     batch_size=batch_size,
+            #     num_workers=num_workers)
+            return stl_ffcv(
+                train_dataset, val_dataset, batch_size, num_workers)
         elif algorithm == 'linear':
             return stl_classifier_ffcv(
                 train_dataset, val_dataset, batch_size, num_workers)
-    elif dataset == 'imagenet':
-        if algorithm == 'ssl':
-            # return get_ssltrain_imagenet_ffcv_dataloaders(
-            #     train_dataset, batch_size, num_workers
-            # )
-            return get_ssltrain_imagenet_pytorch_dataloaders(
-                datadir, batch_size, num_workers
-            )
-        elif algorithm == 'linear':
-            return get_sseval_imagenet_ffcv_dataloaders(
-                train_dataset, val_dataset, batch_size, num_workers
-            )
-    else:
-        raise Exception("Algorithm not implemented")
+                # datadir,
+                # splits=["train", "test"],
+                # batch_size=batch_size,
+                # num_workers=num_workers)
+        else:
+            raise Exception("Algorithm not implemented")
 
 
 def gen_ckpt_path(args, train_algorithm='ssl', epoch=100, prefix='exp', suffix='pth'):
@@ -173,15 +172,9 @@ def build_model(args=None):
             model_cls = byol.BYOL
         else:
             model_args['hidden_dim'] = training.projector_dim
-            model_cls = barlow_twins.BarlowTwins
+            model_cls = bt.BarlowTwins
     
     elif training.algorithm == 'linear':
-        if training.dataset == 'cifar10':
-            num_classes = 10
-        elif training.dataset == 'stl10':
-            num_classes = 100
-        elif training.dataset == 'imagenet':
-            num_classes = 1000
         ckpt_path = gen_ckpt_path(
             training,
             train_algorithm=args.eval.train_algorithm,
@@ -190,10 +183,10 @@ def build_model(args=None):
             'bkey': training.model, # supports : resnet50feat, resnet50proj
             'ckpt_path': ckpt_path,
             'dataset': training.dataset,
-            'feat_dim': 2048,  # args.projector_dim
-            'num_classes': num_classes}
-
-        model_cls = barlow_twins.LinearClassifier
+            'feat_dim': 2048,  # args.projector_dim ### THIS NEEDS TO BE CHECKED. I THINK IT NEEDS TO BE CHANGED TO args.projector_dim - ARNA
+            'num_classes': 10 if training.dataset in ['cifar10','stl10'] else 100, # STL10 evals could be underestimated because if condition changed later (July 4)
+        }
+        model_cls = bt.LinearClassifier
 
     model = model_cls(**model_args)
     model = model.to(memory_format=torch.channels_last).cuda()
@@ -202,7 +195,7 @@ def build_model(args=None):
 
 def build_loss_fn(args=None):
     if args.algorithm in ('BarlowTwins', 'ssl'):
-        return partial(barlow_twins.BarlowTwinLoss, _lambda=args.lambd)
+        return partial(bt.BarlowTwinLoss, _lambda=args.lambd)
     elif args.algorithm == 'byol':
         return byol.BYOLLoss
     elif args.algorithm == 'linear':
@@ -235,6 +228,14 @@ def build_optimizer(model, args=None):
     else:
         raise Exception('Algorithm not implemented')
 
+# def save_images(img1,img2,name):
+#     import matplotlib.pyplot as plt 
+#     plt.close('all')
+#     plt.imsave('test_imgs/{}1.png'.format(name),img1/255.)
+#     plt.close('all')
+#     plt.imsave('test_imgs/{}2.png'.format(name),img2/255.)
+#     plt.close('all')
+
 def train_step(model, dataloader, args, target_model=None, optimizer=None, loss_fn=None, scaler=None, epoch=None):
     """
     Generic trainer.
@@ -257,6 +258,11 @@ def train_step(model, dataloader, args, target_model=None, optimizer=None, loss_
 
     # for inp in dataloader:
     for inp in train_bar:
+        # if num_batches==0:
+        #     save_images(img1=inp[0][0].detach().cpu().numpy().transpose([1,2,0]),img2=inp[1][0].detach().cpu().numpy().transpose([1,2,0]),name='epoch_{}_img_'.format(epoch))
+        # breakpoint()
+        if type(inp[0])==type(inp[1]) and inp[0].shape==inp[1].shape:   # inp is a tuple with the two augmentations.
+            inp = ((inp[0],inp[1]), None)
         ## backward
         optimizer.zero_grad()
 
@@ -284,6 +290,9 @@ def train_step(model, dataloader, args, target_model=None, optimizer=None, loss_
         if args.algorithm == 'byol':
             byol.update_state_dict(target_model, model.state_dict(), args.momentum_tau)
 
+        import ray
+        if ray.tune.is_session_enabled():
+            tune.report(epoch=epoch, loss=total_loss/num_batches)
         train_bar.set_description(
             'Train Epoch: [{}/{}] Loss: {:.4f}'.format(epoch, args.epochs, total_loss / num_batches))
     return total_loss / num_batches
@@ -356,6 +365,7 @@ def train(model, loaders, optimizer, loss_fn, args):
         scaler = GradScaler()
     else:
         scaler = None
+    
 
     if args.algorithm == 'byol':
         target_model = copy.deepcopy(model)
@@ -444,6 +454,8 @@ if __name__ == "__main__":
     args.training.datadir = args.training.datadir.format(dataset=args.training.dataset)
     args.training.train_dataset = args.training.train_dataset.format(dataset=args.training.dataset)
     args.training.val_dataset = args.training.val_dataset.format(dataset=args.training.dataset)
+
+    # train model 
     start_time = time.time()
     run_experiment(args)
 
