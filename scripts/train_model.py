@@ -126,7 +126,7 @@ def build_dataloaders(
             return stl_ffcv(
                 train_dataset, val_dataset, batch_size, num_workers)
         elif algorithm == 'linear':
-            default_linear_bsz = 512
+            default_linear_bsz = 256
             return stl_classifier_ffcv(
                 train_dataset, val_dataset, default_linear_bsz, num_workers)
                 # datadir,
