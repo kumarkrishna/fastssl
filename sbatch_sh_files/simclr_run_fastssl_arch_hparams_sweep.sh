@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#SBATCH --array=0-59%60
+#SBATCH --array=0-239%60
 #SBATCH --partition=long
 #SBATCH --gres=gpu:2g.20gb:1
 #SBATCH --mem=16GB
@@ -23,8 +23,7 @@ temp_arr=(0.01 0.05 0.1 0.2 0.5)
 proj_arr=(128 256 512)
 bsz_arr=(128 256 512 1024)
 
-# arch_layers_arr=('2' '4' '6')
-arch_layers_arr=('8')
+arch_layers_arr=('2' '4' '6' '8')
 
 lenA=${#arch_layers_arr[@]}
 len1=${#temp_arr[@]}
@@ -54,7 +53,7 @@ python scripts/train_model.py --config-file configs/cc_classifier.yaml --eval.tr
 python scripts/train_model.py --config-file configs/cc_classifier.yaml --eval.train_algorithm='SimCLR' --training.temperature=$temp --training.projector_dim=$projector_dim --training.model=$model_name --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir --training.seed=2 --training.batch_size=$batch_size
 python scripts/train_model.py --config-file configs/cc_classifier.yaml --eval.train_algorithm='SimCLR' --training.temperature=$temp --training.projector_dim=$projector_dim --training.model=$model_name --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir --training.seed=3 --training.batch_size=$batch_size
 
-# dataset='stl10'
-# python scripts/train_model.py --config-file configs/cc_classifier.yaml --training.temperature=${temp_arr[$idx1]} --training.projector_dim=${proj_arr[$idx2]} --training.model=$model_name --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir --training.seed=1 --training.batch_size=$batch_size
-# python scripts/train_model.py --config-file configs/cc_classifier.yaml --training.temperature=${temp_arr[$idx1]} --training.projector_dim=${proj_arr[$idx2]} --training.model=$model_name --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir --training.seed=2 --training.batch_size=$batch_size
-# python scripts/train_model.py --config-file configs/cc_classifier.yaml --training.temperature=${temp_arr[$idx1]} --training.projector_dim=${proj_arr[$idx2]} --training.model=$model_name --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir --training.seed=3 --training.batch_size=$batch_size
+dataset='stl10'
+python scripts/train_model.py --config-file configs/cc_classifier.yaml --eval.train_algorithm='SimCLR' --training.temperature=$temp --training.projector_dim=$projector_dim --training.model=$model_name --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir --training.seed=1 --training.batch_size=$batch_size
+python scripts/train_model.py --config-file configs/cc_classifier.yaml --eval.train_algorithm='SimCLR' --training.temperature=$temp --training.projector_dim=$projector_dim --training.model=$model_name --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir --training.seed=2 --training.batch_size=$batch_size
+python scripts/train_model.py --config-file configs/cc_classifier.yaml --eval.train_algorithm='SimCLR' --training.temperature=$temp --training.projector_dim=$projector_dim --training.model=$model_name --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir --training.seed=3 --training.batch_size=$batch_size
