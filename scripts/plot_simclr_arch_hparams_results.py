@@ -16,8 +16,8 @@ R2_thresh = 0.95
 dataset_ssl = 'cifar10'
 dataset_classifier = 'cifar10'
 ckpt_dir = 'simclr_checkpoints_arch_hparams_{}'.format(dataset_ssl)
-arch_arr = ['shallowConv_8','shallowConv_2','shallowConv_4','shallowConv_6']
-# arch_arr = ['shallowConv_2','shallowConv_4']
+# arch_arr = ['shallowConv_8','shallowConv_2','shallowConv_4','shallowConv_6']
+arch_arr = ['shallowConv_4']
 colors_arr = ['violet','darkorange','darkgreen','gold']
 
 def stringer_get_powerlaw(ss, trange):
@@ -124,6 +124,7 @@ for aidx,arch in enumerate(arch_arr):
     ckpt_dir_arch = os.path.join(ckpt_dir,arch)
     files = glob.glob(os.path.join(ckpt_dir_arch,'*'))
     sorting_order = [i[0] for i in sorted(enumerate(files),key=lambda x: float(os.path.basename(x[1]).split('pdim_')[-1].split('_')[0])+float(os.path.basename(x[1]).split('temp_')[-1].split('_')[0]))]
+    breakpoint()
     files_sorted = [files[idx] for idx in sorting_order]
     if len(files_sorted)==0: continue
 
