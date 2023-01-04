@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#SBATCH --array=0-59%60
+#SBATCH --array=0-239%60
 #SBATCH --partition=long
 #SBATCH --gres=gpu:rtx8000:1
 #SBATCH --mem=32GB
@@ -23,8 +23,7 @@ temp_arr=(0.01 0.05 0.1 0.2 0.5)
 proj_arr=(128 256 512)
 bsz_arr=(128 256 512 1024)
 
-# arch_layers_arr=('2' '4' '6')
-arch_layers_arr=('8')
+arch_layers_arr=('2' '4' '6' '8')
 
 lenA=${#arch_layers_arr[@]}
 len1=${#temp_arr[@]}
