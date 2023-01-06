@@ -54,7 +54,7 @@ elif dataset == 'imagenet':
     trainset = torchvision.datasets.ImageNet(
         root=dataset_folder, split='train', transform=None
     )
-    testnset = torchvision.datasets.ImageNet(
+    testset = torchvision.datasets.ImageNet(
         root=dataset_folder, split='val', transform=None
     )
 
