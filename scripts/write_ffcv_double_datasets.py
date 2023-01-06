@@ -14,7 +14,7 @@ from ffcv.transforms import RandomHorizontalFlip, Cutout, \
     RandomTranslate, Convert, ToDevice, ToTensor, ToTorchImage
 from ffcv.transforms.common import Squeeze
 
-write_dataset = False
+write_dataset = True
 
 dataset = 'imagenet'
 if dataset=='cifar100':
