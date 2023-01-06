@@ -28,7 +28,7 @@ elif dataset=='cifar10':
     ffcv_folder = '/network/projects/_groups/linclab_users/ffcv/ffcv_datasets/cifar10'
 elif dataset=='imagenet':
     dataset_folder = '/network/datasets/imagenet.var/imagenet_torchvision/'
-    ffcv_folder = 'network/scratch/l/lindongy/ffcv_datasets/imagenet'
+    ffcv_folder = '/network/scratch/l/lindongy/ffcv_datasets/imagenet'
 
 
 class DoubleImageDataset(Dataset):
@@ -73,10 +73,20 @@ if write_dataset:
     beton_fpath = os.path.join(ffcv_folder,'doubleImage_train.beton')
     double_writer = DatasetWriter(beton_fpath,
                                   {
-                                      'image1': RGBImageField(),
-                                      'image2': RGBImageField(),
+                                      'image1': RGBImageField(
+                                          write_mode='smart',
+                                          max_resolution=500,
+                                          compress_probability=0.5,
+                                          jpeg_quality=90
+                                          ),
+                                      'image2': RGBImageField(
+                                          write_mode='smart',
+                                          max_resolution=500,
+                                          compress_probability=0.5,
+                                          jpeg_quality=90
+                                          ),
                                   })
-    double_writer.from_indexed_dataset(double_data)
+    double_writer.from_indexed_dataset(double_data, chunksize=100)
 
 
 ## VERIFY the WRITTEN DATASET

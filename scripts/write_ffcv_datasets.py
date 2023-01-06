@@ -30,7 +30,7 @@ elif dataset == 'cifar10':
 
 elif dataset == 'imagenet':
     dataset_folder = '/network/datasets/imagenet.var/imagenet_torchvision/'
-    ffcv_folder = 'network/scratch/l/lindongy/ffcv_datasets/imagenet'
+    ffcv_folder = '/network/scratch/l/lindongy/ffcv_datasets/imagenet'
 
 if dataset == 'cifar100':
     trainset = torchvision.datasets.CIFAR100(
@@ -52,11 +52,9 @@ elif dataset == 'stl10':
 
 elif dataset == 'imagenet':
     trainset = torchvision.datasets.ImageNet(
-        root=dataset_folder, split='train', transform=None
-    )
+        root=dataset_folder, split='train')
     testset = torchvision.datasets.ImageNet(
-        root=dataset_folder, split='val', transform=None
-    )
+        root=dataset_folder, split='val')
 
 train_beton_fpath = os.path.join(ffcv_folder, 'train.beton')  # doubleImage_train.beton?
 test_beton_fpath = os.path.join(ffcv_folder, 'test.beton')
@@ -65,13 +63,18 @@ test_beton_fpath = os.path.join(ffcv_folder, 'test.beton')
 if write_dataset:
     datasets = {'train': trainset, 'test': testset}
     for name, ds in datasets.items():
-        breakpoint()
+        #breakpoint()
         path = train_beton_fpath if name == 'train' else test_beton_fpath
         writer = DatasetWriter(path, {
-            'image': RGBImageField(),
+            'image': RGBImageField(
+                write_mode='smart',
+                max_resolution=500,
+                compress_probability=0.5,
+                jpeg_quality=90
+                ),
             'label': IntField()
         })
-        writer.from_indexed_dataset(ds)
+        writer.from_indexed_dataset(ds, chunksize=100)
 
 ## VERIFY the WRITTEN DATASET
 BATCH_SIZE = 5000
@@ -115,16 +118,14 @@ elif dataset == 'stl10':
 
 elif dataset == 'imagenet':
 	trainset = torchvision.datasets.ImageNet(
-		root=dataset_folder, split='train', transform=None
-	)
+		root=dataset_folder, split='train')
 	testnset = torchvision.datasets.ImageNet(
-		root=dataset_folder, split='val', transform=None
-	)
+		root=dataset_folder, split='val')
 
 trainloader = torch.utils.data.DataLoader(
-    trainset, batch_size=BATCH_SIZE, shuffle=False, num_workers=1)
+    trainset, batch_size=BATCH_SIZE, shuffle=False, num_workers=4)
 testloader = torch.utils.data.DataLoader(
-    testset, batch_size=BATCH_SIZE, shuffle=False, num_workers=1)
+    testset, batch_size=BATCH_SIZE, shuffle=False, num_workers=4)
 
 X_ffcv, y_ffcv = next(iter(loaders['train']))
 X_tv, y_tv = next(iter(trainloader))
