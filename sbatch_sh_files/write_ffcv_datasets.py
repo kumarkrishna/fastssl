@@ -29,6 +29,9 @@ elif dataset=='cifar10':
 	dataset_folder = '/network/datasets/cifar10.var/cifar10_torchvision/'
 	ffcv_folder = '/network/projects/_groups/linclab_users/ffcv/ffcv_datasets/cifar10'
 
+elif dataset=='imagenet':
+	dataset_folder = '/network/datasets/imagenet.var/imagenet_torchvision/'
+	ffcv_folder = '/network/projects/_groups/linclab_users/ffcv/ffcv_datasets/imagenet'
 
 if dataset=='cifar100':
 	trainset = torchvision.datasets.CIFAR100(
@@ -47,8 +50,16 @@ elif dataset=='stl10':
 	    root=dataset_folder, split='train', download=False, transform=None)
 	testset = torchvision.datasets.STL10(
 	    root=dataset_folder, split='test', download=False, transform=None)
-	
-train_beton_fpath = os.path.join(ffcv_folder,'train.beton')
+
+elif dataset=='imagenet':
+	trainset = torchvision.datasets.ImageNet(
+		root=dataset_folder, split='train', download=False, transform=None
+	)
+	testnset = torchvision.datasets.ImageNet(
+		root=dataset_folder, split='test', download=False, transform=None
+	)
+
+train_beton_fpath = os.path.join(ffcv_folder,'train.beton')  # doubleImage_train.beton?
 test_beton_fpath = os.path.join(ffcv_folder,'test.beton')
 
 ## WRITE TO BETON FILES
