@@ -30,7 +30,7 @@ elif dataset == 'cifar10':
 
 elif dataset == 'imagenet':
     dataset_folder = '/network/datasets/imagenet.var/imagenet_torchvision/'
-    ffcv_folder = '/network/projects/_groups/linclab_users/ffcv/ffcv_datasets/imagenet'
+    ffcv_folder = 'network/scratch/l/lindongy/ffcv_datasets/imagenet'
 
 if dataset == 'cifar100':
     trainset = torchvision.datasets.CIFAR100(
