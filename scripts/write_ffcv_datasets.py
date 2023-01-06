@@ -52,10 +52,10 @@ elif dataset == 'stl10':
 
 elif dataset == 'imagenet':
     trainset = torchvision.datasets.ImageNet(
-        root=dataset_folder, split='train', download=False, transform=None
+        root=dataset_folder, split='train', transform=None
     )
     testnset = torchvision.datasets.ImageNet(
-        root=dataset_folder, split='val', download=False, transform=None
+        root=dataset_folder, split='val', transform=None
     )
 
 train_beton_fpath = os.path.join(ffcv_folder, 'train.beton')  # doubleImage_train.beton?
@@ -115,10 +115,10 @@ elif dataset == 'stl10':
 
 elif dataset == 'imagenet':
 	trainset = torchvision.datasets.ImageNet(
-		root=dataset_folder, split='train', download=False, transform=None
+		root=dataset_folder, split='train', transform=None
 	)
 	testnset = torchvision.datasets.ImageNet(
-		root=dataset_folder, split='val', download=False, transform=None
+		root=dataset_folder, split='val', transform=None
 	)
 
 trainloader = torch.utils.data.DataLoader(

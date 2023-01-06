@@ -49,8 +49,7 @@ class DoubleImageDataset(Dataset):
                                                       transform=None)
         elif dataset=='imagenet':
             self.dataset = torchvision.datasets.ImageNet(root=dataset_folder,
-                                                         split='train',
-                                                         download=download)
+                                                         split='train')
         else:
             raise NotImplementedError
 
