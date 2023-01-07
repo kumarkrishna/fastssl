@@ -1,7 +1,7 @@
 #!/bin/bash
 
 write_dataset () {
-    write_path=$WRITE_DIR/doubleImage_${1}_${2}_${3}.ffcv
+    write_path=$WRITE_DIR/doubleImage_${1}_${2}_${3}.beton
     echo "Writing ImageNet doubleImage dataset to ${write_path}"
     python write_double_datasets.py \
         --cfg.dataset=imagenet \

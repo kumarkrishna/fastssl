@@ -1,12 +1,12 @@
 #!/bin/bash
 
 write_dataset () {
-    write_path=$WRITE_DIR/${1}_${2}_${3}_${4}.ffcv
+    write_path=$WRITE_DIR/${1}_${2}_${3}_${4}.beton
     echo "Writing ImageNet ${1} dataset to ${write_path}"
     python write_datasets.py \
         --cfg.dataset=imagenet \
         --cfg.split=${1} \
-        --cfg.data_dir=$IMAGENET_DIR/${1} \
+        --cfg.data_dir=$IMAGENET_DIR \
         --cfg.write_path=$write_path \
         --cfg.max_resolution=${2} \
         --cfg.write_mode=proportion \
