@@ -1,4 +1,4 @@
-from torch.utils.data import Subset
+from torch.utils.data import Subset, Dataset
 from ffcv.writer import DatasetWriter
 from ffcv.fields import IntField, RGBImageField
 from torchvision.datasets import CIFAR10, ImageFolder, ImageNet
@@ -22,6 +22,28 @@ Section('cfg', 'arguments to give the writer').params(
     compress_probability=Param(float, 'compress probability', default=None)
 )
 
+class DoubleImageDataset(Dataset):
+    def __init__(self,dataset,dataset_folder,train=True,download=False,transform=None):
+        if dataset=='cifar':
+            self.dataset = CIFAR10(root=dataset_folder,train=train,download=download)
+        elif dataset=='imagenet':
+            self.dataset = ImageFolder(root=dataset_folder)
+        else:
+            raise NotImplementedError
+
+        if transform is not None:
+            self.transform = transform
+        else:
+            self.transform = None
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self,idx):
+        if self.transform is not None:
+            return self.transform(self.dataset[idx][0]),self.transform(self.dataset[idx][0])
+        return self.dataset[idx][0],self.dataset[idx][0]
+
 
 @section('cfg')
 @param('dataset')
@@ -37,9 +59,11 @@ Section('cfg', 'arguments to give the writer').params(
 def main(dataset, data_dir, write_path, max_resolution, num_workers,
          chunk_size, subset, jpeg_quality, write_mode, compress_probability):
     if dataset == 'cifar':
-        my_dataset = CIFAR10(root=data_dir, train=True, download=True)
+        # my_dataset = CIFAR10(root=data_dir, train=True, download=True)
+        my_dataset = DoubleImageDataset(dataset=dataset, dataset_folder=data_dir)
     elif dataset == 'imagenet':
-        my_dataset = ImageFolder(root=data_dir)
+        # my_dataset = ImageFolder(root=data_dir)
+        my_dataset = DoubleImageDataset(dataset=dataset, dataset_folder=data_dir)
     else:
         raise ValueError('Unrecognized dataset', dataset)
 
