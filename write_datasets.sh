@@ -2,6 +2,9 @@
 export IMAGENET_DIR=/network/datasets/imagenet.var/imagenet_torchvision/
 export export WRITE_DIR=/network/scratch/l/lindongy/ffcv_datasets/imagenet_256
 
+module load anaconda/3 python/3.7/cuda/11.0/cudnn/8.0/pytorch/1.7.0
+source $HOME/testenv/bin/activate
+
 write_dataset () {
     write_path=$WRITE_DIR/${1}_${2}_${3}_${4}.ffcv
     echo "Writing ImageNet ${1} dataset to ${write_path}"
