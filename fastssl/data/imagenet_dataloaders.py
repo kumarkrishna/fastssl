@@ -120,9 +120,10 @@ def create_train_loader(train_dataset, num_workers, batch_size,
         ToTorchImage(),
         NormalizeImage(IMAGENET_MEAN, IMAGENET_STD, np.float16)
     ]
+    loaders = {}
 
     order = OrderOption.RANDOM if distributed else OrderOption.QUASI_RANDOM
-    loader = Loader(train_dataset,
+    loaders['train'] = Loader(train_dataset,
                     batch_size=batch_size,
                     num_workers=num_workers,
                     order=order,
@@ -134,7 +135,7 @@ def create_train_loader(train_dataset, num_workers, batch_size,
                     },
                     distributed=distributed)
 
-    return loader
+    return loaders
 
 
 def create_val_loader(train_dataset, val_dataset, num_workers, batch_size,
