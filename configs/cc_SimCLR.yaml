@@ -1,8 +1,8 @@
 training:
-  dataset: 'cifar10'
+  dataset: 'imagenet'
   datadir: '/network/datasets/{dataset}.var/{dataset}_torchvision/'
-  train_dataset: '/network/projects/_groups/linclab_users/ffcv/ffcv_datasets/{dataset}/doubleImage_train.beton'
-  val_dataset: '/network/projects/_groups/linclab_users/ffcv/ffcv_datasets/{dataset}/test.beton'
+  train_dataset: '/network/scratch/l/lindongy/ffcv_datasets/{dataset}/doubleImage_train.beton'
+  val_dataset: '/network/scratch/l/lindongy/ffcv_datasets/{dataset}/test.beton'
   batch_size: 512
   epochs: 100
   temperature: 0.1

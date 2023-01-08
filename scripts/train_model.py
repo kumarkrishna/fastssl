@@ -35,6 +35,7 @@ from tqdm import tqdm
 from fastargs import Section, Param
 
 from fastssl.data import cifar_ffcv, cifar_classifier_ffcv, cifar_pt, stl_ffcv, stl10_pt, stl_classifier_ffcv
+from fastssl.data.imagenet_dataloaders import get_simclr_eval_imagenet_ffcv_dataloaders, get_simclr_train_imagenet_ffcv_dataloaders
 from fastssl.models import barlow_twins as bt
 from fastssl.models import byol, simclr
 
@@ -133,6 +134,15 @@ def build_dataloaders(
                 # splits=["train", "test"],
                 # batch_size=batch_size,
                 # num_workers=num_workers)
+    elif dataset == 'imagenet':
+        if algorithm in ('BarlowTwins', 'SimCLR', 'ssl', 'byol'):
+            return get_simclr_train_imagenet_ffcv_dataloaders(
+                train_dataset, val_dataset, batch_size, num_workers)
+        elif algorithm == 'linear':
+            default_linear_bsz = 256
+            return get_simclr_eval_imagenet_ffcv_dataloaders(
+                train_dataset, val_dataset, default_linear_bsz, num_workers)
+
         else:
             raise Exception("Algorithm not implemented")
 
@@ -220,12 +230,18 @@ def build_model(args=None):
             training,
             eval,
             epoch=args.eval.epoch)
+        if training.dataset == 'cifar10':
+            num_classes = 10
+        elif training.dataset == 'stl10':
+            num_classes = 100
+        elif training.dataset == 'imagenet':
+            num_classes = 1000
         model_args = {
             'bkey': training.model, # supports : resnet50feat, resnet50proj
             'ckpt_path': ckpt_path,
             'dataset': training.dataset,
             'feat_dim': 2048,  # args.projector_dim ### THIS NEEDS TO BE CHECKED. I THINK IT NEEDS TO BE CHANGED TO args.projector_dim - ARNA
-            'num_classes': 10 if training.dataset in ['cifar10','stl10'] else 100, # STL10 evals could be underestimated because if condition changed later (July 4)
+            'num_classes': num_classes
         }
         model_cls = bt.LinearClassifier
 

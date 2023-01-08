@@ -3,11 +3,11 @@
 #SBATCH --partition=long
 #SBATCH --gres=gpu:2g.20gb:1
 #SBATCH --mem=16GB
-#SBATCH --time=3:00:00
+#SBATCH --time=12:00:00
 #SBATCH --cpus-per-gpu=4
-#SBATCH --output=sbatch_out/simclr_cifar10_hparam_sweep.%A.%a.out
-#SBATCH --error=sbatch_err/simclr_cifar10_hparam_sweep.%A.%a.err
-#SBATCH --job-name=simclr_cifar10_hparam_sweep
+#SBATCH --output=sbatch_out/simclr_imagenet_hparam_sweep.%A.%a.out
+#SBATCH --error=sbatch_err/simclr_imagenet_hparam_sweep.%A.%a.err
+#SBATCH --job-name=simclr_imagenet_hparam_sweep
 
 . /etc/profile
 module load anaconda/3
@@ -42,7 +42,7 @@ idx12=$((idx123%lenMul12))
 lridx=$((idx12/lenWD))
 wdidx=$((idx12%lenWD))
 
-dataset='cifar10'
+dataset='imagenet'
 temp=${temp_arr[$tidx]}
 projector_dim=${proj_arr[$pidx]}
 batch_size=${bsz_arr[$bidx]}
@@ -54,7 +54,7 @@ model_name=shallowConvproj_4
 python scripts/train_model.py --config-file configs/cc_SimCLR.yaml --training.temperature=$temp --training.projector_dim=$projector_dim --training.batch_size=$batch_size --training.lr=$lr --training.weight_decay=$wd --training.model=$model_name --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir
 
 model_name=shallowConvfeat_4
-dataset='cifar10'
+dataset='imagenet'
 python scripts/train_model.py --config-file configs/cc_classifier.yaml --eval.train_algorithm='SimCLR' --training.temperature=$temp --training.projector_dim=$projector_dim --training.batch_size=$batch_size --training.lr=$lr --training.weight_decay=$wd --training.model=$model_name --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir --training.seed=1
 python scripts/train_model.py --config-file configs/cc_classifier.yaml --eval.train_algorithm='SimCLR' --training.temperature=$temp --training.projector_dim=$projector_dim --training.batch_size=$batch_size --training.lr=$lr --training.weight_decay=$wd --training.model=$model_name --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir --training.seed=2
 python scripts/train_model.py --config-file configs/cc_classifier.yaml --eval.train_algorithm='SimCLR' --training.temperature=$temp --training.projector_dim=$projector_dim --training.batch_size=$batch_size --training.lr=$lr --training.weight_decay=$wd --training.model=$model_name --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir --training.seed=3
