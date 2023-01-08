@@ -65,6 +65,26 @@ class ImageNetClassifierTransform(nn.Module):
         return self.transform(x)
 
 
+class simclr_imagenet_transform(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.transform = transforms.Compose([transforms.RandomHorizontalFlip(),
+                                             transforms.RandomResizedCrop(size=96),
+                                             transforms.RandomApply([
+                                                 transforms.ColorJitter(brightness=0.5,
+                                                                        contrast=0.5,
+                                                                        saturation=0.5,
+                                                                        hue=0.1)
+                                             ], p=0.8),
+                                             transforms.RandomGrayscale(p=0.2),
+                                             transforms.GaussianBlur(kernel_size=9),
+                                             transforms.ToTensor(),
+                                             transforms.Normalize((0.5,), (0.5,))
+                                             ])
+
+    def forward(self, x):
+        return self.transform(x)
+
 # transform for datasampler
 class TransformImagenet(nn.Module):
     def __init__(self):

@@ -11,7 +11,7 @@ from ffcv.fields.decoders import IntDecoder, SimpleRGBImageDecoder, CenterCropRG
 from fastssl.data.custom_transforms import ReScale, GaussianBlur, Solarization
 import torchvision.transforms as transforms
 from PIL import Image
-from fastssl.data.imagenet_transforms import TransformImagenet, ImageNetTransformFFCV, ImageNetClassifierTransform, Transform, TransformGPU
+from fastssl.data.imagenet_transforms import simclr_imagenet_transform, TransformImagenet, ImageNetTransformFFCV, ImageNetClassifierTransform, Transform, TransformGPU
 
 DEFAULT_CROP_RATIO = 224/256
 ImageNet_MEAN = [0.485, 0.456, 0.406]  # official ImageNet mean
@@ -103,23 +103,13 @@ def create_train_loader(train_dataset, num_workers, batch_size,
 
     res = 224
     decoder = RandomResizedCropRGBImageDecoder((res, res))
-    image_pipeline1: List[Operation] = [
-        decoder,
-        RandomHorizontalFlip(),
-        ToTensor(),
-        ToDevice(torch.device(this_device), non_blocking=True),
-        ToTorchImage(),
-        NormalizeImage(IMAGENET_MEAN, IMAGENET_STD, np.float16)
-    ]
+    image_pipeline1: List[Operation] = [decoder, RandomHorizontalFlip(), ToTensor(),
+                                        ToDevice(torch.device(this_device), non_blocking=True), ToTorchImage(),
+                                        simclr_imagenet_transform(), NormalizeImage(IMAGENET_MEAN, IMAGENET_STD, np.float16)]
 
-    image_pipeline2: List[Operation] = [
-        decoder,
-        RandomHorizontalFlip(),
-        ToTensor(),
-        ToDevice(torch.device(this_device), non_blocking=True),
-        ToTorchImage(),
-        NormalizeImage(IMAGENET_MEAN, IMAGENET_STD, np.float16)
-    ]
+    image_pipeline2: List[Operation] = [decoder, RandomHorizontalFlip(), ToTensor(),
+                                        ToDevice(torch.device(this_device), non_blocking=True), ToTorchImage(),
+                                        simclr_imagenet_transform(), NormalizeImage(IMAGENET_MEAN, IMAGENET_STD, np.float16)]
     loaders = {}
 
     order = OrderOption.RANDOM if distributed else OrderOption.QUASI_RANDOM
