@@ -1,8 +1,6 @@
 training:
   dataset: 'imagenet'
-  datadir: '/network/datasets/{dataset}.var/{dataset}_torchvision/'
-  train_dataset: '/network/scratch/l/lindongy/ffcv_datasets/{dataset}/doubleImage_train.beton'
-  val_dataset: '/network/scratch/l/lindongy/ffcv_datasets/{dataset}/test.beton'
+  datadir: '/datashare/ImageNet/ILSVRC2012'
   batch_size: 512
   epochs: 100
   temperature: 0.1
