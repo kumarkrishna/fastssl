@@ -4,9 +4,8 @@ from matplotlib.ticker import FormatStrFormatter
 import os, glob
 from linclab_utils import plot_utils
 from tqdm import tqdm
-from sklearn.metrics import r2_score
 
-from fastssl.utils import powerlaw as powerlaw
+from imagenet_pipeline.utils import powerlaw as powerlaw
 
 plot_utils.linclab_plt_defaults(font="Arial",fontdir=os.path.expanduser('~')+"/Projects/fonts") 	# Run locally, not from cluster
 
@@ -22,7 +21,7 @@ ckpt_dir = 'checkpoints_design_hparams_{}'.format(dataset_ssl)
 
 def plot_alpha_fit(data_dict,trange,lamda_val,pdim_val):
 	eigen = data_dict['eigenspectrum']
-	al,ypred,r2,r2_range = powerlaw.stringer_get_powerlaw(eigen,trange)
+	al,ypred,r2,r2_range = powerlaw.stringer_get_powerlaw(eigen, trange)
 	print(r2,r2_range)
 	fin_range = 1000
 	plt.loglog(np.arange(1,1+fin_range),eigen[:fin_range])
@@ -143,9 +142,9 @@ for fidx,file in enumerate(tqdm(files_sorted)):
 					range_init = 11
 				else:
 					range_init = 5
-				alpha,ypred,R2,r2_range = powerlaw.stringer_get_powerlaw(eigen,np.arange(range_init,50))
+				alpha,ypred,R2,r2_range = powerlaw.stringer_get_powerlaw(eigen, np.arange(range_init, 50))
 				if r2_range<R2_thresh:
-					alpha,ypred,R2,r2_range = powerlaw.stringer_get_powerlaw(eigen,np.arange(range_init,20))
+					alpha,ypred,R2,r2_range = powerlaw.stringer_get_powerlaw(eigen, np.arange(range_init, 20))
 				R2_100 = r2_range
 			else:
 				alpha = linear_dict['alpha']
