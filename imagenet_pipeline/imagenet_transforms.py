@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 import torchvision.transforms as transforms
-from imagenet_pipeline.custom_transforms import GaussianBlur, Solarization
+from custom_transforms import GaussianBlur, Solarization
 from PIL import Image
 
 # mean, std for normalized dataset

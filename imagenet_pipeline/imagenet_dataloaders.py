@@ -2,7 +2,7 @@
 import torch
 import torchvision
 import numpy as np
-from imagenet_pipeline.imagenet_transforms import ImageNetClassifierTransform, Transform
+from imagenet_transforms import ImageNetClassifierTransform, Transform
 
 DEFAULT_CROP_RATIO = 224 / 256
 ImageNet_MEAN = [0.485, 0.456, 0.406]  # official ImageNet mean

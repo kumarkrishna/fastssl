@@ -29,11 +29,11 @@ from tqdm import tqdm
 
 from fastargs import Section, Param
 
-from imagenet_pipeline.imagenet_dataloaders import get_ssltrain_imagenet_pytorch_dataloaders, get_eval_imagenet_pytorch_dataloaders
-from imagenet_pipeline import simclr
+from imagenet_dataloaders import get_ssltrain_imagenet_pytorch_dataloaders, get_eval_imagenet_pytorch_dataloaders
+import simclr
 
-from imagenet_pipeline.utils.base import set_seeds, get_args_from_config, merge_with_args
-import imagenet_pipeline.utils.powerlaw as powerlaw
+from utils.base import set_seeds, get_args_from_config, merge_with_args
+import utils.powerlaw as powerlaw
 
 Section('training', 'Pytorch ImageNet training').params(
     dataset=Param(
