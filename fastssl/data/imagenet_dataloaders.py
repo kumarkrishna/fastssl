@@ -94,19 +94,6 @@ def get_ssltrain_imagenet_ffcv_dataloaders(
                                )
     return loaders
 
-simclr_transforms = [transforms.RandomHorizontalFlip(),
-                                        transforms.RandomResizedCrop(size=96),
-                                        transforms.RandomApply([
-                                            transforms.ColorJitter(brightness=0.5,
-                                                                   contrast=0.5,
-                                                                   saturation=0.5,
-                                                                   hue=0.1)
-                                        ], p=0.8),
-                                        transforms.RandomGrayscale(p=0.2),
-                                        transforms.GaussianBlur(kernel_size=9),
-                                        transforms.ToTensor(),
-                                        transforms.Normalize((0.5,), (0.5,))
-                                        ]
 
 def create_train_loader(train_dataset, num_workers, batch_size,
                         distributed, in_memory):
@@ -114,16 +101,23 @@ def create_train_loader(train_dataset, num_workers, batch_size,
     # paths = train_dataset
 
     res = 224
-    decoder = RandomResizedCropRGBImageDecoder((res, res))
-    image_pipeline1: List[Operation] = [decoder, RandomHorizontalFlip()]
-    image_pipeline1.extend(simclr_transforms)
-    image_pipeline1.extend([ToTensor(),ToDevice(torch.device(this_device), non_blocking=True), ToTorchImage(),
-                            NormalizeImage(IMAGENET_MEAN, IMAGENET_STD, np.float16)])
+    image_pipeline1: List[Operation] = [
+        RandomResizedCropRGBImageDecoder((res, res)),
+        RandomHorizontalFlip(),
+        ToTensor(),
+        ToDevice(torch.device(this_device), non_blocking=True),
+        ToTorchImage(),
+        NormalizeImage(IMAGENET_MEAN, IMAGENET_STD, np.float16)
+    ]
 
-    image_pipeline2: List[Operation] = [decoder, RandomHorizontalFlip()]
-    image_pipeline2.extend(simclr_transforms)
-    image_pipeline1.extend([ToTensor(),ToDevice(torch.device(this_device), non_blocking=True), ToTorchImage(),
-                            NormalizeImage(IMAGENET_MEAN, IMAGENET_STD, np.float16)])
+    image_pipeline2: List[Operation] = [
+        RandomResizedCropRGBImageDecoder((res, res)),
+        RandomHorizontalFlip(),
+        ToTensor(),
+        ToDevice(torch.device(this_device), non_blocking=True),
+        ToTorchImage(),
+        NormalizeImage(IMAGENET_MEAN, IMAGENET_STD, np.float16)
+    ]
     loaders = {}
 
     order = OrderOption.RANDOM if distributed else OrderOption.QUASI_RANDOM
