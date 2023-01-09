@@ -35,7 +35,7 @@ from tqdm import tqdm
 from fastargs import Section, Param
 
 from fastssl.data import cifar_ffcv, cifar_classifier_ffcv, cifar_pt, stl_ffcv, stl10_pt, stl_classifier_ffcv
-from fastssl.data.imagenet_dataloaders import create_train_loader, create_val_loader
+from fastssl.data.imagenet_dataloaders import create_train_loader, create_val_loader, get_ssltrain_imagenet_pytorch_dataloaders, get_eval_imagenet_pytorch_dataloaders
 from fastssl.models import barlow_twins as bt
 from fastssl.models import byol, simclr
 
@@ -136,16 +136,12 @@ def build_dataloaders(
                 # num_workers=num_workers)
     elif dataset == 'imagenet':
         if algorithm in ('BarlowTwins', 'SimCLR', 'ssl', 'byol'):
-            return create_train_loader(train_dataset, num_workers, batch_size,
-                                       distributed=False, in_memory=True)
-            # return get_simclr_train_imagenet_ffcv_dataloaders(
-            #     train_dataset, val_dataset, batch_size, num_workers)
+            return get_ssltrain_imagenet_pytorch_dataloaders(data_dir='/network/datasets/imagenet.var/imagenet_torchvision', 
+                    batch_size=batch_size, num_workers=num_workers)
         elif algorithm == 'linear':
             default_linear_bsz = 256
-            return create_val_loader(train_dataset, val_dataset, num_workers, batch_size=default_linear_bsz,
-                                     resolution=224, distributed=False)
-            # return get_simclr_eval_imagenet_ffcv_dataloaders(
-            #     train_dataset, val_dataset, default_linear_bsz, num_workers)
+            return get_eval_imagenet_pytorch_dataloaders(
+                data_dir='/network/datasets/imagenet.var/imagenet_torchvision', default_linear_bsz, num_workers)
 
         else:
             raise Exception("Algorithm not implemented")
