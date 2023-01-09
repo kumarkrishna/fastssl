@@ -2,9 +2,6 @@ import numpy as np
 import torch
 from torch import nn, optim
 import torchvision.transforms as transforms
-from ffcv.transforms import RandomHorizontalFlip, RandomResizedCrop, Cutout, \
-    RandomTranslate, Convert, ToDevice, ToTensor, ToTorchImage, NormalizeImage
-from fastssl.data.custom_ffcv_transforms import ColorJitter, RandomGrayscale
 from fastssl.data.custom_transforms import ReScale, GaussianBlur, Solarization
 from PIL import Image
 
@@ -24,28 +21,6 @@ ImageNet_MEAN = [0.485, 0.456, 0.406]  # official ImageNet mean
 ImageNet_STD = [0.229, 0.224, 0.225]  # official ImageNet std
 ImageNet_FFCV_MEAN = [0.4820, 0.4538, 0.3998]
 ImageNet_FFCV_STD = [0.2208, 0.2165, 0.2157]
-
-
-class ImageNetTransformFFCV():
-    """
-    Defines a list of FFCV transforms for SimCLR on STL
-    """
-
-    def __init__(self):
-        self.transform_list = [RandomResizedCrop(224, interpolation=Image.BICUBIC),
-                               RandomHorizontalFlip(flip_prob=0.5),
-                               ColorJitter(jitter_prob=0.8,
-                                           brightness=0.4,
-                                           contrast=0.4,
-                                           saturation=0.2,
-                                           hue=0.1),
-                               RandomGrayscale(p=0.2),
-                               GaussianBlur(p=0.1),
-                               NormalizeImage(mean=np.array(ImageNet_FFCV_MEAN),
-                                              std=np.array(ImageNet_FFCV_STD), type=np.float32)]
-        self.dataset_side_length = 224  # only matters if using RandomResizedCropRGBImageDecoder
-        self.dataset_resize_scale = (0.1, 0.1)  # only matters if using RandomResizedCropRGBImageDecoder
-        self.dataset_resize_ratio = (0.75, 4 / 3)  # only matters if using RandomResizedCropRGBImageDecoder
 
 
 class ImageNetClassifierTransform(nn.Module):
