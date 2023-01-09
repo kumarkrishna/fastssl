@@ -7,19 +7,22 @@ from ffcv.fields.decoders import IntDecoder
 from ffcv.loader import Loader, OrderOption
 from ffcv.pipeline.operation import Operation
 from ffcv.transforms import RandomHorizontalFlip, Squeeze, ToDevice, ToTensor, ToTorchImage, Convert, NormalizeImage
-from ffcv.fields.decoders import IntDecoder, SimpleRGBImageDecoder, CenterCropRGBImageDecoder, RandomResizedCropRGBImageDecoder
+from ffcv.fields.decoders import IntDecoder, SimpleRGBImageDecoder, CenterCropRGBImageDecoder, \
+    RandomResizedCropRGBImageDecoder
 from fastssl.data.custom_transforms import ReScale, GaussianBlur, Solarization
 import torchvision.transforms as transforms
 from PIL import Image
-from fastssl.data.imagenet_transforms import simclr_imagenet_transform, TransformImagenet, ImageNetTransformFFCV, ImageNetClassifierTransform, Transform, TransformGPU
+from fastssl.data.imagenet_transforms import simclr_imagenet_transform, TransformImagenet, ImageNetTransformFFCV, \
+    ImageNetClassifierTransform, Transform, TransformGPU
 
-DEFAULT_CROP_RATIO = 224/256
+DEFAULT_CROP_RATIO = 224 / 256
 ImageNet_MEAN = [0.485, 0.456, 0.406]  # official ImageNet mean
 ImageNet_STD = [0.229, 0.224, 0.225]  # official ImageNet std
 ImageNet_FFCV_MEAN = [0.4820, 0.4538, 0.3998]
 ImageNet_FFCV_STD = [0.2208, 0.2165, 0.2157]
 IMAGENET_MEAN = np.array([0.485, 0.456, 0.406]) * 255
 IMAGENET_STD = np.array([0.229, 0.224, 0.225]) * 255
+
 
 def get_sseval_imagenet_ffcv_dataloaders(
         train_dataset=None, val_dataset=None, batch_size=None, num_workers=None
@@ -36,7 +39,7 @@ def get_sseval_imagenet_ffcv_dataloaders(
             CenterCropRGBImageDecoder((224, 224), ratio=DEFAULT_CROP_RATIO),
             RandomHorizontalFlip(),
             ToTensor(),
-            #ToDevice('cuda:0', non_blocking=True),
+            # ToDevice('cuda:0', non_blocking=True),
             ToTorchImage(),
             torchvision.transforms.ConvertImageDtype(torch.float16),
             torchvision.transforms.Normalize(mean=[0.485, 0.456, 0.406],
@@ -46,7 +49,7 @@ def get_sseval_imagenet_ffcv_dataloaders(
             IntDecoder(),
             ToTensor(),
             Squeeze(),
-            #ToDevice('cuda:0')
+            # ToDevice('cuda:0')
         ]
         ordering = OrderOption.QUASI_RANDOM if name == 'train' else OrderOption.SEQUENTIAL
 
@@ -63,6 +66,7 @@ def get_sseval_imagenet_ffcv_dataloaders(
 
     return loaders
 
+
 def get_ssltrain_imagenet_ffcv_dataloaders(
         train_dataset=None, batch_size=None, num_workers=None
 ):
@@ -76,7 +80,7 @@ def get_ssltrain_imagenet_ffcv_dataloaders(
         image_pipeline: List[Operation] = [
             CenterCropRGBImageDecoder((224, 224), ratio=DEFAULT_CROP_RATIO),
             ToTensor(),
-            #ToDevice('cuda:0', non_blocking=True),
+            # ToDevice('cuda:0', non_blocking=True),
             ToTorchImage(),
             TransformImagenet()
         ]
@@ -122,16 +126,16 @@ def create_train_loader(train_dataset, num_workers, batch_size,
 
     order = OrderOption.RANDOM if distributed else OrderOption.QUASI_RANDOM
     loaders['train'] = Loader(train_dataset,
-                    batch_size=batch_size,
-                    num_workers=num_workers,
-                    order=order,
-                    os_cache=in_memory,
-                    drop_last=True,
-                    pipelines={
-                        'image1': image_pipeline1,
-                        'image2': image_pipeline2
-                    },
-                    distributed=distributed)
+                              batch_size=batch_size,
+                              num_workers=num_workers,
+                              order=order,
+                              os_cache=in_memory,
+                              drop_last=True,
+                              pipelines={
+                                  'image1': image_pipeline1,
+                                  'image2': image_pipeline2
+                              },
+                              distributed=distributed)
 
     return loaders
 
@@ -165,17 +169,16 @@ def create_val_loader(train_dataset, val_dataset, num_workers, batch_size,
         ]
 
         loaders[name] = Loader(paths[name],
-                        batch_size=batch_size,
-                        num_workers=num_workers,
-                        order=OrderOption.SEQUENTIAL,
-                        drop_last=False,
-                        pipelines={
-                            'image': image_pipeline,
-                            'label': label_pipeline
-                        },
-                        distributed=distributed)
+                               batch_size=batch_size,
+                               num_workers=num_workers,
+                               order=OrderOption.SEQUENTIAL,
+                               drop_last=False,
+                               pipelines={
+                                   'image': image_pipeline,
+                                   'label': label_pipeline
+                               },
+                               distributed=distributed)
     return loaders
-
 
 
 def get_simclr_train_imagenet_ffcv_dataloaders(
@@ -197,7 +200,7 @@ def get_simclr_train_imagenet_ffcv_dataloaders(
             Convert(torch.float32)]
         image_pipeline1.extend(ImageNetTransformFFCV().transform_list)
 
-        image_pipeline2 : List[Operation] = [
+        image_pipeline2: List[Operation] = [
             CenterCropRGBImageDecoder((224, 224), ratio=DEFAULT_CROP_RATIO),
             ToTensor(),
             ToDevice('cuda:0', non_blocking=True),
@@ -219,7 +222,7 @@ def get_simclr_train_imagenet_ffcv_dataloaders(
                                )
 
     for name in ['test']:
-        label_pipeline : List[Operation] = [
+        label_pipeline: List[Operation] = [
             IntDecoder(),
             ToTensor(),
             ToDevice("cuda:0"),
@@ -234,7 +237,7 @@ def get_simclr_train_imagenet_ffcv_dataloaders(
             # ReScale(1.0/255.0),
             ImageNetClassifierTransform()
         ]
-        ordering = OrderOption.RANDOM #if split == 'train' else OrderOption.SEQUENTIAL
+        ordering = OrderOption.RANDOM  # if split == 'train' else OrderOption.SEQUENTIAL
 
         loaders[name] = Loader(
             paths[name],
@@ -243,7 +246,7 @@ def get_simclr_train_imagenet_ffcv_dataloaders(
             os_cache=True,
             order=ordering,
             drop_last=False,
-            pipelines={'image' : image_pipeline, 'label' : label_pipeline}
+            pipelines={'image': image_pipeline, 'label': label_pipeline}
         )
     return loaders
 
@@ -263,7 +266,7 @@ def get_simclr_eval_imagenet_ffcv_dataloaders(
             CenterCropRGBImageDecoder((224, 224), ratio=DEFAULT_CROP_RATIO),
             # RandomHorizontalFlip(),  # maybe get rid of?
             ToTensor(),
-            #ToDevice('cuda:0', non_blocking=True),
+            # ToDevice('cuda:0', non_blocking=True),
             ToTorchImage(),
             torchvision.transforms.ConvertImageDtype(torch.float16),
             ImageNetClassifierTransform()
@@ -274,7 +277,7 @@ def get_simclr_eval_imagenet_ffcv_dataloaders(
             IntDecoder(),
             ToTensor(),
             Squeeze(),
-            #ToDevice('cuda:0')
+            # ToDevice('cuda:0')
         ]
         ordering = OrderOption.QUASI_RANDOM if name == 'train' else OrderOption.SEQUENTIAL
 
@@ -335,3 +338,31 @@ def get_ssltrain_imagenet_pytorch_dataloaders_distributed(
     return loaders, sampler
 
 
+def get_eval_imagenet_pytorch_dataloaders(
+        data_dir='/network/datasets/imagenet.var/imagenet_torchvision',
+        batch_size=None,
+        num_workers=None,
+        device="cuda:0"):
+    """
+    Create pytorch compatible dataloaders for ImageNet.
+    """
+    loaders = {}
+    paths = {
+        'train': data_dir + '/train',
+        'test': data_dir
+    }
+    for name in ['train']:
+        dataset = torchvision.datasets.ImageFolder(paths[name], ImageNetClassifierTransform())
+        loader = torch.utils.data.DataLoader(
+            dataset, batch_size=batch_size, num_workers=num_workers,
+            pin_memory=True, shuffle=True, drop_last=True
+        )
+        loaders[name] = loader
+
+    for name in ['test']:
+        dataset = torchvision.datasets.ImageNet(root=data_dir, train='val', download=False,
+                                                transform=ImageNetClassifierTransform())
+        loaders[name] = torch.utils.data.DataLoader(
+            dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
+
+    return loaders
