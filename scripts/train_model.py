@@ -141,8 +141,7 @@ def build_dataloaders(
         elif algorithm == 'linear':
             default_linear_bsz = 256
             return get_eval_imagenet_pytorch_dataloaders(
-                data_dir='/network/datasets/imagenet.var/imagenet_torchvision', default_linear_bsz, num_workers)
-
+                data_dir='/network/datasets/imagenet.var/imagenet_torchvision', batch_size=default_linear_bsz, num_workers=num_workers)
         else:
             raise Exception("Algorithm not implemented")
 
