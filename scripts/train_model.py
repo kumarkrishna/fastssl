@@ -34,25 +34,19 @@ from tqdm import tqdm
 
 from fastargs import Section, Param
 
-from fastssl.data import cifar_ffcv, cifar_classifier_ffcv, cifar_pt, stl_ffcv, stl10_pt, stl_classifier_ffcv
-from fastssl.data.imagenet_dataloaders import create_train_loader, create_val_loader, get_ssltrain_imagenet_pytorch_dataloaders, get_eval_imagenet_pytorch_dataloaders
-from fastssl.models import barlow_twins as bt
-from fastssl.models import byol, simclr
+from fastssl.data.imagenet_dataloaders import get_ssltrain_imagenet_pytorch_dataloaders, get_eval_imagenet_pytorch_dataloaders
+from fastssl.models import simclr
 
 from fastssl.utils.base import set_seeds, get_args_from_config, merge_with_args
 import fastssl.utils.powerlaw as powerlaw
 
-Section('training', 'Fast CIFAR-10 training').params(
+Section('training', 'Pytorch ImageNet training').params(
     dataset=Param(
-        str, 'dataset', default='cifar10'),
+        str, 'dataset', default='imagenet'),
     datadir=Param(
-        str, 'train data dir', default='/data/krishna/data/cifar'),
-    train_dataset=Param(
-        str, 'train-dataset', default='/data/krishna/data/ffcv/cifar_train.beton'),
-    val_dataset=Param(
-        str, 'valid-dataset', default='/data/krishna/data/ffcv/cifar_test.beton'),
+        str, 'train data dir', default='/datashare/ImageNet/ILSVRC2012'),
     batch_size=Param(
-        int, 'batch-size', default=512),
+        int, 'batch-size', default=128),
     epochs=Param(
         int, 'epochs', default=100), 
     lr=Param(
@@ -68,9 +62,9 @@ Section('training', 'Fast CIFAR-10 training').params(
     seed=Param(
         int, 'seed', default=1),
     algorithm=Param(
-        str, 'learning algorithm', default='ssl'),
+        str, 'learning algorithm', default='SimClR'),
     model=Param(
-        str, 'model to train', default='resnet50proj'),
+        str, 'model to train', default='shallowConvproj_4'),
     num_workers=Param(
         int, 'num of CPU workers', default=4),
     projector_dim=Param(
@@ -80,70 +74,39 @@ Section('training', 'Fast CIFAR-10 training').params(
     log_interval=Param(
         int, 'log-interval in terms of epochs', default=20),
     ckpt_dir=Param(
-        str, 'ckpt-dir', default='/data/krishna/research/results/0319/001/checkpoints'),
+        str, 'ckpt-dir', default='/home/lindongy/scratch/fastssl/checkpoints'),
     use_autocast=Param(
         bool, 'autocast fp16', default=True),
     track_alpha=Param(
         bool, 'Track evolution of alpha', default=False),
 )
 
-Section('eval', 'Fast CIFAR-10 evaluation').params(
+Section('eval', 'Pytorch ImageNet evaluation').params(
     train_algorithm=Param(
-        str, 'pretrain algo', default='ssl'),
+        str, 'pretrain algo', default='SimCLR'),
     epoch=Param(
         int, 'epoch', default=24)
 )
 
 
 def build_dataloaders(
-    dataset='cifar10',
-    algorithm='ssl',
+    dataset='imagenet',
+    algorithm='SimCLR',
     datadir='data/',
-    train_dataset=None,
-    val_dataset=None,
     batch_size=128,
     num_workers=2):
-    if 'cifar' in dataset:
-        if algorithm in ('BarlowTwins', 'SimCLR', 'ssl', 'byol'):
-            # return cifar_pt(
-            #     datadir, batch_size=batch_size, num_workers=num_workers)
-            # for ffcv cifar10 dataloader
-            return cifar_ffcv(
-                train_dataset, val_dataset, batch_size, num_workers)
-        elif algorithm == 'linear':
-            default_linear_bsz = 512
-            # dataloader for classifier
-            return cifar_classifier_ffcv(
-                train_dataset, val_dataset, default_linear_bsz, num_workers)
-        else:
-            raise Exception("Algorithm not implemented")
-    elif dataset == 'stl10':
-        if algorithm in ('BarlowTwins', 'SimCLR', 'ssl', 'byol'):
-            # return stl10_pt(
-            #     datadir,
-            #     splits=["unlabeled"],
-            #     batch_size=batch_size,
-            #     num_workers=num_workers)
-            return stl_ffcv(
-                train_dataset, val_dataset, batch_size, num_workers)
-        elif algorithm == 'linear':
-            default_linear_bsz = 256
-            return stl_classifier_ffcv(
-                train_dataset, val_dataset, default_linear_bsz, num_workers)
-                # datadir,
-                # splits=["train", "test"],
-                # batch_size=batch_size,
-                # num_workers=num_workers)
-    elif dataset == 'imagenet':
-        if algorithm in ('BarlowTwins', 'SimCLR', 'ssl', 'byol'):
-            return get_ssltrain_imagenet_pytorch_dataloaders(data_dir='/network/datasets/imagenet.var/imagenet_torchvision', 
+    if dataset == 'imagenet':
+        if algorithm in ('SimCLR'):
+            return get_ssltrain_imagenet_pytorch_dataloaders(data_dir=datadir,
                     batch_size=batch_size, num_workers=num_workers)
         elif algorithm == 'linear':
             default_linear_bsz = 256
             return get_eval_imagenet_pytorch_dataloaders(
-                data_dir='/network/datasets/imagenet.var/imagenet_torchvision', batch_size=default_linear_bsz, num_workers=num_workers)
+                data_dir=datadir, batch_size=default_linear_bsz, num_workers=num_workers)
         else:
             raise Exception("Algorithm not implemented")
+    else:
+        raise Exception("dataset must be imagenet")
 
 
 def gen_ckpt_path(
@@ -172,20 +135,15 @@ def gen_ckpt_path(
             dir_algorithm = eval_args.train_algorithm
         else:
             dir_algorithm = args.algorithm
-        if dir_algorithm in ['ssl','BarlowTwins']:
-            ckpt_dir = os.path.join(
-                main_dir, 'lambd_{:.6f}_pdim_{}{}_lr_{}_wd_{}'.format(
-                            args.lambd,
-                            args.projector_dim,
-                            '_no_autocast' if not args.use_autocast else '',
-                            args.lr, args.weight_decay))
-        elif dir_algorithm in ['SimCLR']:
+        if dir_algorithm in ['SimCLR']:
             ckpt_dir = os.path.join(
                 main_dir, 'temp_{:.3f}_pdim_{}{}_bsz_{}_lr_{}_wd_{}'.format(
                             args.temperature,
                             args.projector_dim,
                             '_no_autocast' if not args.use_autocast else '',
                             args.batch_size,args.lr, args.weight_decay))
+        else:
+            raise Exception("algorithm must be SimCLR!")
         # create ckpt file name
         ckpt_path = os.path.join(ckpt_dir, '{}_{}_{}{}.{}'.format(
             prefix, 
@@ -206,35 +164,20 @@ def build_model(args=None):
     training = args.training
     eval = args.eval
 
-    if training.algorithm in ('BarlowTwins', 'SimCLR', 'ssl', 'byol'):
-        model_args = {
-            'bkey': training.model,
-            'dataset': training.dataset,
-            'projector_dim': training.projector_dim,
-            }
-        
-        if training.algorithm in ('byol'):
-            model_args['hidden_dim'] = training.hidden_dim
-            model_cls = byol.BYOL
-        elif training.algorithm in ('SimCLR'):
-            # setting projector dim and hidden dim the same for SimCLR projector
-            model_args['hidden_dim'] = training.projector_dim
-            model_cls = simclr.SimCLR
-        else:
-            model_args['hidden_dim'] = training.projector_dim
-            model_cls = bt.BarlowTwins
+    if training.algorithm == 'SimCLR':
+        model_args = {'bkey': training.model, 'dataset': training.dataset, 'projector_dim': training.projector_dim,
+                      'hidden_dim': training.projector_dim}
+        model_cls = simclr.SimCLR
     
     elif training.algorithm == 'linear':
         ckpt_path = gen_ckpt_path(
             training,
             eval,
             epoch=args.eval.epoch)
-        if training.dataset == 'cifar10':
-            num_classes = 10
-        elif training.dataset == 'stl10':
-            num_classes = 100
-        elif training.dataset == 'imagenet':
+        if training.dataset == 'imagenet':
             num_classes = 1000
+        else:
+            raise Exception("dataset must be imagenet")
         model_args = {
             'bkey': training.model, # supports : resnet50feat, resnet50proj
             'ckpt_path': ckpt_path,
@@ -242,7 +185,7 @@ def build_model(args=None):
             'feat_dim': 2048,  # args.projector_dim ### THIS NEEDS TO BE CHECKED. I THINK IT NEEDS TO BE CHANGED TO args.projector_dim - ARNA
             'num_classes': num_classes
         }
-        model_cls = bt.LinearClassifier
+        model_cls = simclr.LinearClassifier
 
     model = model_cls(**model_args)
     model = model.to(memory_format=torch.channels_last).cuda()
@@ -250,11 +193,7 @@ def build_model(args=None):
 
 
 def build_loss_fn(args=None):
-    if args.algorithm in ('BarlowTwins', 'ssl'):
-        return partial(bt.BarlowTwinLoss, _lambda=args.lambd)
-    elif args.algorithm == 'byol':
-        return byol.BYOLLoss
-    elif args.algorithm == 'SimCLR':
+    if args.algorithm == 'SimCLR':
         return partial(simclr.SimCLRLoss, _temperature=args.temperature)
     elif args.algorithm == 'linear':
         def classifier_xent(model, inp):
@@ -286,13 +225,7 @@ def build_optimizer(model, args=None):
     else:
         raise Exception('Algorithm not implemented')
 
-# def save_images(img1,img2,name):
-#     import matplotlib.pyplot as plt 
-#     plt.close('all')
-#     plt.imsave('test_imgs/{}1.png'.format(name),img1/255.)
-#     plt.close('all')
-#     plt.imsave('test_imgs/{}2.png'.format(name),img2/255.)
-#     plt.close('all')
+
 
 def train_step(model, dataloader, args, target_model=None, optimizer=None, loss_fn=None, scaler=None, epoch=None):
     """
@@ -327,9 +260,7 @@ def train_step(model, dataloader, args, target_model=None, optimizer=None, loss_
         ## forward   
         if scaler:
             with autocast():
-                if args.algorithm == 'byol':
-                    loss = loss_fn(model, target_model, inp)
-                elif args.algorithm in ('BarlowTwins', 'SimCLR', 'ssl', 'linear'):
+                if args.algorithm in ('BarlowTwins', 'SimCLR', 'ssl', 'linear'):
                     loss = loss_fn(model, inp)
                 else:
                     raise Exception('Algorithm not implemented')
@@ -344,9 +275,6 @@ def train_step(model, dataloader, args, target_model=None, optimizer=None, loss_
         ## update loss
         total_loss += loss.item() 
         num_batches += 1
-
-        if args.algorithm == 'byol':
-            byol.update_state_dict(target_model, model.state_dict(), args.momentum_tau)
 
         # import ray
         # if ray.tune.is_session_enabled():
@@ -518,8 +446,6 @@ def run_experiment(args):
         training.dataset,
         training.algorithm,
         training.datadir,
-        training.train_dataset,
-        training.val_dataset,
         training.batch_size,
         training.num_workers)
     print("CONSTRUCTED DATA LOADERS")
@@ -561,8 +487,6 @@ if __name__ == "__main__":
     # gather arguments 
     args = get_args_from_config()
     args.training.datadir = args.training.datadir.format(dataset=args.training.dataset)
-    args.training.train_dataset = args.training.train_dataset.format(dataset=args.training.dataset)
-    args.training.val_dataset = args.training.val_dataset.format(dataset=args.training.dataset)
 
     # train model 
     start_time = time.time()
