@@ -85,6 +85,7 @@ class BackBone(nn.Module):
                 module2 = module1.copy()
                 stream2.extend(module2)
             if lidx == layers-1:
+                in_ch = in_ch*2
                 deep = [nn.Conv2d(in_ch,out_ch,kernel_size=3, stride=1,padding=1,bias=False),
                         nn.BatchNorm2d(out_ch),
                         nn.ReLU()]
