@@ -154,12 +154,18 @@ def gen_ckpt_path(
     suffix='pth'
 ):
     if suffix=='pth':
-        main_dir = os.environ['SLURM_TMPDIR']
-        ckpt_dir = main_dir
+        main_dir = '/network/scratch/l/lindongy/ffcv_experiments'
+        main_dir = os.path.join(main_dir, args.ckpt_dir)
+        if not os.path.exists(main_dir):
+            os.mkdir(main_dir)
+        model_name = args.model
+        model_name = model_name.replace('proj','')
+        model_name = model_name.replace('feat','')
+        ckpt_dir = os.path.join(main_dir,model_name)
         ckpt_path = os.path.join(ckpt_dir, '{}_{}_{}{}.{}'.format(
-            prefix, 
-            eval_args.train_algorithm if 'linear' in args.algorithm else args.algorithm, 
-            epoch, 
+            prefix,
+            eval_args.train_algorithm if 'linear' in args.algorithm else args.algorithm,
+            epoch,
             '_seed_{}'.format(args.seed) if 'linear' in eval_args.train_algorithm else '',
             suffix))
     else:
@@ -235,15 +241,18 @@ def build_model(args=None):
             num_classes = 100
         elif training.dataset == 'imagenet':
             num_classes = 1000
+        if 'feat' in training.model:
+            feat_dim = 2048  # size of the output of CNN encoder
+        elif 'proj' in training.model:
+            feat_dim = training.projector_dim
         model_args = {
-            'bkey': training.model, # supports : resnet50feat, resnet50proj
+            'bkey': training.model,
             'ckpt_path': ckpt_path,
             'dataset': training.dataset,
-            'feat_dim': 2048,  # args.projector_dim ### THIS NEEDS TO BE CHECKED. I THINK IT NEEDS TO BE CHANGED TO args.projector_dim - ARNA
+            'feat_dim': feat_dim,
             'num_classes': num_classes
         }
-        model_cls = bt.LinearClassifier
-
+        model_cls = simclr.LinearClassifier
     model = model_cls(**model_args)
     model = model.to(memory_format=torch.channels_last).cuda()
     return model
