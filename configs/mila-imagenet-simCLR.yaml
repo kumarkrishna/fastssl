@@ -1,0 +1,14 @@
+training:
+  dataset: 'mini-imagenet'
+  datadir: '/network/scratch/l/lindongy/{dataset}'
+  batch_size: 512
+  epochs: 100
+  temperature: 0.1
+  projector_dim: 128
+  seed: 42
+  algorithm: 'SimCLR'
+  model: 'shallowConvproj_4'
+  num_workers: 4
+  ckpt_dir: 'checkpoints'
+  use_autocast: True
+  log_interval: 100
