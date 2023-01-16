@@ -22,7 +22,7 @@ import time
 import torch
 from torch.cuda.amp import GradScaler, autocast
 from torch.nn import CrossEntropyLoss
-
+from pathlib import Path
 from tqdm import tqdm
 import sys
 import math
@@ -30,80 +30,120 @@ from torch import nn, optim
 
 from fastargs import Section, Param
 
-from fastssl.data import get_ssltrain_imagenet_pytorch_dataloaders_distributed, get_sseval_imagenet_ffcv_dataloaders
-import fastssl.models.barlow_twins as bt
-from imagenet_pipeline.utils.base import set_seeds, get_args_from_config
-import imagenet_pipeline.utils.powerlaw as powerlaw
-from fastssl.models.barlow_twins import off_diagonal
+from imagenet_dataloaders import get_eval_imagenet_pytorch_dataloaders, get_simclr_train_imagenet_pytorch_dataloaders_distributed
+import simclr
+from utils.base import set_seeds, get_args_from_config
+import utils.powerlaw as powerlaw
 
-Section('training', 'Fast distributed imagenet training').params(
+Section('training', 'Fast distributed imagenet training with SimCLR').params(
     dataset=Param(
         str, 'dataset', default='imagenet'),
     datadir=Param(
-        str, 'train data dir', default='/data/krishna/data/cifar'),
-    train_dataset=Param(
-        str, 'train-dataset', default='/data/krishna/data/ffcv/cifar_train.beton'),
-    val_dataset=Param(
-        str, 'valid-dataset', default='/data/krishna/data/ffcv/cifar_test.beton'),
+        str, 'train data dir', default='/datashare/ImageNet/ILSVRC2012'),
     batch_size=Param(
         int, 'batch-size', default=512),
     epochs=Param(
         int, 'epochs', default=100),
-    learning_rate_weights=Param(
-        float, 'learning-rate weights', default=0.2),
-    learning_rate_biases=Param(
-        float, 'learning-rate biases', default=0.0048),
+    lr=Param(
+        float, 'learning-rate', default=1e-3),
     weight_decay=Param(
         float, 'weight_decay', default=1e-6),
-    lambd=Param(
-        float, 'lambd', default=5e-3),
+    temperature=Param(
+        float, 'temperature for SimCLR', default=0.01),
     seed=Param(
         int, 'seed', default=1),
     algorithm=Param(
-        str, 'learning algorithm', default='ssl'),
+        str, 'learning algorithm', default='SimCLR'),
     model=Param(
-        str, 'model to train', default='resnet50proj'),
+        str, 'model to train', default='shallowConvproj_4'),
     num_workers=Param(
-        int, 'num of CPU workers', default=3),
+        int, 'num of CPU workers', default=4),
     projector_dim=Param(
-        int, 'projector dimension', default=4096),
+        int, 'projector (z) dimension', default=4096),
     hidden_dim=Param(
-        int, 'hidden dimension', default=4096),
+        int, 'hidden dimension for simCLR MLP projector', default=4096),
     log_interval=Param(
         int, 'log-interval in terms of epochs', default=1),
     ckpt_dir=Param(
-        str, 'ckpt-dir', default='/data/krishna/research/results/0319/001/checkpoints'),
+        str, 'ckpt-dir', default='/home/lindongy/scratch/fastssl/checkpoints'),
     use_autocast=Param(
         bool, 'autocast fp16', default=True),
 )
 
 Section('eval', 'Fast Imagenet evaluation').params(
     train_algorithm=Param(
-        str, 'pretrain algo', default='ssl'),
+        str, 'pretrain algo', default='SimCLR'),
     epoch=Param(
         int, 'epoch', default=24)
 )
 
 
 def build_dataloaders(
-        dataset='cifar10',
-        algorithm='ssl',
+        dataset='imagenet',
+        algorithm='SimCLR',
         datadir='data/',
-        train_dataset=None,
-        val_dataset=None,
         batch_size=128,
         num_workers=2,
         world_size=None
 ):
-        if algorithm == 'ssl':
-            return get_ssltrain_imagenet_pytorch_dataloaders_distributed(
-                datadir, batch_size, num_workers, world_size
+        if algorithm == 'SimCLR':
+            # return get_ssltrain_imagenet_pytorch_dataloaders_distributed(
+            #     datadir, batch_size, num_workers, world_size
+            # )
+            return get_simclr_train_imagenet_pytorch_dataloaders_distributed(
+                data_dir=datadir, batch_size=batch_size, num_workers=num_workers, world_size=world_size
             )
         elif algorithm == 'linear':
-            return get_sseval_imagenet_ffcv_dataloaders(
-                train_dataset, val_dataset, batch_size, num_workers
-            )
+            default_linear_bsz = 256
+            return get_eval_imagenet_pytorch_dataloaders(
+                data_dir=datadir, batch_size=default_linear_bsz, num_workers=num_workers)
 
+
+def gen_ckpt_path(
+        args,
+        eval_args,
+        epoch=100,
+        prefix='exp',
+        suffix='pth'
+):
+    if suffix=='pth':
+        main_dir = os.environ['SLURM_TMPDIR']
+        ckpt_dir = main_dir
+        ckpt_path = os.path.join(ckpt_dir, '{}_{}_{}{}.{}'.format(
+            prefix,
+            eval_args.train_algorithm if 'linear' in args.algorithm else args.algorithm,
+            epoch,
+            '_seed_{}'.format(args.seed) if 'linear' in eval_args.train_algorithm else '',
+            suffix))
+    else:
+        main_dir = args.ckpt_dir
+        model_name = args.model
+        model_name = model_name.replace('proj','')
+        model_name = model_name.replace('feat','')
+        main_dir = os.path.join(main_dir,model_name)
+        if args.algorithm == 'linear':
+            dir_algorithm = eval_args.train_algorithm
+        else:
+            dir_algorithm = args.algorithm
+        if dir_algorithm in ['SimCLR']:
+            ckpt_dir = os.path.join(
+                main_dir, 'temp_{:.3f}_pdim_{}{}_bsz_{}_lr_{}_wd_{}'.format(
+                    args.temperature,
+                    args.projector_dim,
+                    '_no_autocast' if not args.use_autocast else '',
+                    args.batch_size,args.lr, args.weight_decay))
+        else:
+            raise Exception("algorithm must be SimCLR!")
+        # create ckpt file name
+        ckpt_path = os.path.join(ckpt_dir, '{}_{}_{}{}.{}'.format(
+            prefix,
+            args.algorithm,
+            epoch,
+            '_seed_{}'.format(args.seed) if 'linear' in args.algorithm else '',
+            suffix))
+    # create directory if it doesn't exist
+    Path(ckpt_dir).mkdir(parents=True, exist_ok=True)
+    return ckpt_path
 
 
 def build_model(args=None):
@@ -113,30 +153,30 @@ def build_model(args=None):
     """
     training = args.training
 
-    if training.algorithm == 'ssl':
-        model_args = {
-            'bkey': training.model,
-            'dataset': training.dataset,
-            'projector_dim': training.projector_dim,
-            'hidden_dim': training.hidden_dim
-        }
-        model_cls = bt.BarlowTwins
+    if training.algorithm == 'SimCLR':
+        model_args = {'bkey': training.model, 'dataset': training.dataset, 'projector_dim': training.projector_dim,
+                      'hidden_dim': training.projector_dim}
+        model_cls = simclr.SimCLR
 
     elif training.algorithm == 'linear':
-        if training.dataset == 'cifar10':
-            num_classes = 10
-        elif training.dataset == 'stl10':
-            num_classes = 100
-        elif training.dataset == 'imagenet':
+        ckpt_path = gen_ckpt_path(
+            training,
+            eval,
+            epoch=args.eval.epoch)
+        if training.dataset == 'imagenet':
             num_classes = 1000
+        if 'feat' in args.bkey:
+            feat_dim = 2048  # size of the output of CNN encoder
+        elif 'proj' in args.bkey:
+            feat_dim = args.projector_dim
         model_args = {
-            'bkey': training.model,  # supports : resnet50feat, resnet50proj
-            'ckpt_path': args.ckpt_dir + f'/checkpoint_ssl.pth',
+            'bkey': training.model,
+            'ckpt_path': ckpt_path,
             'dataset': training.dataset,
-            'feat_dim': 2048,  # args.projector_dim
-            'num_classes': num_classes,
+            'feat_dim': feat_dim,
+            'num_classes': num_classes
         }
-        model_cls = bt.LinearClassifier
+        model_cls = simclr.LinearClassifier
 
     print(model_args, model_cls)
     model = model_cls(**model_args)
@@ -145,8 +185,8 @@ def build_model(args=None):
 
 
 def build_loss_fn(args=None):
-    if args.algorithm == 'ssl':
-        return partial(BarlowTwinLoss, _lambda=args.lambd)
+    if args.algorithm == 'SimCLR':
+        return partial(simclr.SimCLRLoss, _temperature=args.temperature)
     elif args.algorithm == 'linear':
         def classifier_xent(model, inp):
             x, y = inp
@@ -334,16 +374,12 @@ def main_worker(gpu, train_args, eval_args):
     else:
         start_epoch = 0
 
-    ## Use FFCV to build dataloaders
     loaders, sampler = build_dataloaders(
         training.dataset,
         training.algorithm,
         training.datadir,
-        training.train_dataset,
-        training.val_dataset,
         training.batch_size,
-        training.num_workers,
-        training.world_size
+        training.num_workers
     )
     print("CONSTRUCTED DATA LOADERS")
 
@@ -354,29 +390,6 @@ def main_worker(gpu, train_args, eval_args):
     # train the model with default=BT
     results = train(model, loaders, optimizer, loss_fn, training, gpu, sampler, start_epoch)
 
-
-
-def BarlowTwinLoss(model, inp, gpu, _lambda=None):
-
-    # generate samples from tuple
-    (x1, x2), _ = inp
-    x1, x2 = x1.cuda(gpu, non_blocking=True), x2.cuda(gpu, non_blocking=True)
-    bsz = x1.shape[0]
-
-    # forward pass
-    z1 = model(x1)
-    z2 = model(x2)
-
-    z1_norm = (z1 - z1.mean(0)) / z1.std(0)  # NxD
-    z2_norm = (z2 - z2.mean(0)) / z2.std(0)  # NxD
-
-    c = torch.mm(z1_norm.T, z2_norm) / bsz  # DxD
-
-    on_diag = torch.diagonal(c).add_(-1).pow_(2).sum()
-    off_diag = off_diagonal(c).pow_(2).sum()
-
-    loss = on_diag + _lambda * off_diag
-    return loss
 
 class LARS(optim.Optimizer):
     def __init__(self, params, lr, weight_decay=0, momentum=0.9, eta=0.001,

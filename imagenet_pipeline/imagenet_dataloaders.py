@@ -12,9 +12,29 @@ ImageNet_FFCV_STD = [0.2208, 0.2165, 0.2157]
 IMAGENET_MEAN = np.array([0.485, 0.456, 0.406]) * 255
 IMAGENET_STD = np.array([0.229, 0.224, 0.225]) * 255
 
+def get_simclr_train_imagenet_pytorch_dataloaders_distributed(
+        data_dir=None, batch_size=None, num_workers=None, world_size=None
+):
+    paths = {
+        'train': data_dir + '/train',
+    }
+    loaders = {}
+
+    for name in ['train']:
+        dataset = torchvision.datasets.ImageFolder(paths[name], Transform())
+        sampler = torch.utils.data.distributed.DistributedSampler(dataset)
+        assert batch_size % world_size == 0
+        per_device_batch_size = batch_size // world_size
+        loader = torch.utils.data.DataLoader(
+            dataset, batch_size=per_device_batch_size, num_workers=num_workers,
+            pin_memory=True, sampler=sampler
+        )
+        loaders[name] = loader
+
+    return loaders, sampler
 
 
-def get_ssltrain_imagenet_pytorch_dataloaders(
+def get_simclr_train_imagenet_pytorch_dataloaders(
         data_dir=None, batch_size=None, num_workers=None
 ):
     paths = {
@@ -85,3 +105,4 @@ def get_eval_imagenet_pytorch_dataloaders(
             dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
 
     return loaders
+#TODO: get_eval_imagenet_pytorch_dataloaders should also return sampler?

@@ -29,7 +29,7 @@ from tqdm import tqdm
 
 from fastargs import Section, Param
 
-from imagenet_dataloaders import get_ssltrain_imagenet_pytorch_dataloaders, get_eval_imagenet_pytorch_dataloaders
+from imagenet_dataloaders import get_simclr_train_imagenet_pytorch_dataloaders, get_eval_imagenet_pytorch_dataloaders
 import simclr
 
 from utils.base import set_seeds, get_args_from_config, merge_with_args
@@ -48,10 +48,6 @@ Section('training', 'Pytorch ImageNet training').params(
         float, 'learning-rate', default=1e-3),
     weight_decay=Param(
         float, 'weight_decay', default=1e-6),
-    lambd=Param(
-        float, 'lambd for BarlowTwins', default=1/128),
-    momentum_tau=Param(
-        float, 'momentum_tau for BYOL', default=0.01),
     temperature=Param(
         float, 'temperature for SimCLR', default=0.01),
     seed=Param(
@@ -63,9 +59,9 @@ Section('training', 'Pytorch ImageNet training').params(
     num_workers=Param(
         int, 'num of CPU workers', default=4),
     projector_dim=Param(
-        int, 'projector dimension', default=128),
+        int, 'projector dimension (z)', default=128),
     hidden_dim=Param(
-        int, 'hidden dimension for BYOL projector', default=128),
+        int, 'hidden dimension for simCLR MLP projector', default=128),
     log_interval=Param(
         int, 'log-interval in terms of epochs', default=20),
     ckpt_dir=Param(
@@ -92,7 +88,7 @@ def build_dataloaders(
     num_workers=2):
     if dataset == 'imagenet':
         if algorithm in ('SimCLR'):
-            return get_ssltrain_imagenet_pytorch_dataloaders(data_dir=datadir,
+            return get_simclr_train_imagenet_pytorch_dataloaders(data_dir=datadir,
                     batch_size=batch_size, num_workers=num_workers)
         elif algorithm == 'linear':
             default_linear_bsz = 256
@@ -112,12 +108,18 @@ def gen_ckpt_path(
     suffix='pth'
 ):
     if suffix=='pth':
-        main_dir = os.environ['SLURM_TMPDIR']
-        ckpt_dir = main_dir
+        main_dir = '/network/scratch/l/lindongy/ffcv_experiments'
+        main_dir = os.path.join(main_dir, args.ckpt_dir)
+        if not os.path.exists(main_dir):
+            os.mkdir(main_dir)
+        model_name = args.model
+        model_name = model_name.replace('proj','')
+        model_name = model_name.replace('feat','')
+        ckpt_dir = os.path.join(main_dir,model_name)
         ckpt_path = os.path.join(ckpt_dir, '{}_{}_{}{}.{}'.format(
-            prefix, 
-            eval_args.train_algorithm if 'linear' in args.algorithm else args.algorithm, 
-            epoch, 
+            prefix,
+            eval_args.train_algorithm if 'linear' in args.algorithm else args.algorithm,
+            epoch,
             '_seed_{}'.format(args.seed) if 'linear' in eval_args.train_algorithm else '',
             suffix))
     else:
@@ -173,11 +175,15 @@ def build_model(args=None):
             num_classes = 1000
         else:
             raise Exception("dataset must be imagenet")
+        if 'feat' in training.model:
+            feat_dim = 2048  # size of the output of CNN encoder
+        elif 'proj' in training.model:
+            feat_dim = training.projector_dim
         model_args = {
-            'bkey': training.model, # supports : resnet50feat, resnet50proj
+            'bkey': training.model,
             'ckpt_path': ckpt_path,
             'dataset': training.dataset,
-            'feat_dim': 2048,  # args.projector_dim ### THIS NEEDS TO BE CHECKED. I THINK IT NEEDS TO BE CHANGED TO args.projector_dim - ARNA
+            'feat_dim': feat_dim,
             'num_classes': num_classes
         }
         model_cls = simclr.LinearClassifier
@@ -436,7 +442,6 @@ def run_experiment(args):
     set_seeds(training.seed)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-    ## Use FFCV to build dataloaders 
     loaders = build_dataloaders(
         training.dataset,
         training.algorithm,
