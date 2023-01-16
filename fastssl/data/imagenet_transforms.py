@@ -57,8 +57,8 @@ class ImageNetClassifierTransform(nn.Module):
         super().__init__()
         self.transform = transforms.Compose([
             # transforms.ConvertImageDtype(torch.float32),
-            transforms.Normalize(mean=ImageNet_FFCV_MEAN,
-                                 std=ImageNet_FFCV_STD)
+            transforms.Normalize(mean=ImageNet_MEAN,
+                                 std=ImageNet_STD)
         ])
 
     def forward(self, x):

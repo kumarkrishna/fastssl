@@ -13,12 +13,26 @@ IMAGENET_STD = np.array([0.229, 0.224, 0.225]) * 255
 
 
 
-def get_mini_imagenet_dataloaders(data_dir=None, batch_size=None, num_workers=None):
+def get_mini_imagenet_dataloaders_simclr(data_dir=None, batch_size=None, num_workers=None):
 
     loaders = {}
 
     dataset = torchvision.datasets.ImageFolder(data_dir, Transform())
-    train_dataset, test_dataset = torch.utils.data.random_split(dataset, [0.9, 0.1], generator=torch.Generator().manual_seed(42))
+    # train_dataset, test_dataset = torch.utils.data.random_split(dataset, [0.9, 0.1], generator=torch.Generator().manual_seed(42))
+
+    loaders['train'] = torch.utils.data.DataLoader(
+        dataset, batch_size=batch_size, num_workers=num_workers,
+        pin_memory=True, shuffle=True, drop_last=True
+    )
+    return loaders
+
+
+def get_mini_imagenet_dataloaders_eval(data_dir=None, batch_size=None, eval_perc=0.1, num_workers=None):
+
+    loaders = {}
+
+    dataset = torchvision.datasets.ImageFolder(data_dir, ImageNetClassifierTransform())
+    train_dataset, test_dataset = torch.utils.data.random_split(dataset, [1-eval_perc, eval_perc], generator=torch.Generator().manual_seed(42))
 
     loaders['train'] = torch.utils.data.DataLoader(
         train_dataset, batch_size=batch_size, num_workers=num_workers,
@@ -30,4 +44,3 @@ def get_mini_imagenet_dataloaders(data_dir=None, batch_size=None, num_workers=No
     )
 
     return loaders
-
