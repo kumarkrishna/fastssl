@@ -172,7 +172,25 @@ def gen_ckpt_path(
         model_name = args.model
         model_name = model_name.replace('proj','')
         model_name = model_name.replace('feat','')
-        ckpt_dir = os.path.join(main_dir,model_name)
+        main_dir = os.path.join(main_dir,model_name)
+        if args.algorithm == 'linear':
+            dir_algorithm = eval_args.train_algorithm
+        else:
+            dir_algorithm = args.algorithm
+        if dir_algorithm in ['ssl','BarlowTwins']:
+            ckpt_dir = os.path.join(
+                main_dir, 'lambd_{:.6f}_pdim_{}{}_lr_{}_wd_{}'.format(
+                    args.lambd,
+                    args.projector_dim,
+                    '_no_autocast' if not args.use_autocast else '',
+                    args.lr, args.weight_decay))
+        elif dir_algorithm in ['SimCLR']:
+            ckpt_dir = os.path.join(
+                main_dir, 'temp_{:.3f}_pdim_{}{}_bsz_{}_lr_{}_wd_{}'.format(
+                    args.temperature,
+                    args.projector_dim,
+                    '_no_autocast' if not args.use_autocast else '',
+                    args.batch_size,args.lr, args.weight_decay))
         ckpt_path = os.path.join(ckpt_dir, '{}_{}_{}{}.{}'.format(
             prefix,
             eval_args.train_algorithm if 'linear' in args.algorithm else args.algorithm,
