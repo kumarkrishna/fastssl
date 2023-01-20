@@ -1,7 +1,7 @@
 import torch
 import torchvision
 import numpy as np
-from imagenet_transforms import ImageNetClassifierTransform, Transform
+from fastssl.data.imagenet_transforms import ImageNetClassifierTransform, Transform
 
 DEFAULT_CROP_RATIO = 224 / 256
 ImageNet_MEAN = [0.485, 0.456, 0.406]  # official ImageNet mean
@@ -32,15 +32,15 @@ def get_mini_imagenet_dataloaders_eval(data_dir=None, batch_size=None, eval_perc
     loaders = {}
 
     dataset = torchvision.datasets.ImageFolder(data_dir, ImageNetClassifierTransform())
-    train_dataset, test_dataset = torch.utils.data.random_split(dataset, [1-eval_perc, eval_perc], generator=torch.Generator().manual_seed(42))
+    train_dataset, test_dataset = torch.utils.data.random_split(dataset, [int(len(dataset)*(1-eval_perc)), int(len(dataset)*eval_perc)], generator=torch.Generator().manual_seed(42))
 
     loaders['train'] = torch.utils.data.DataLoader(
         train_dataset, batch_size=batch_size, num_workers=num_workers,
-        pin_memory=True, shuffle=True, drop_last=True
+        pin_memory=False, shuffle=True, drop_last=True
     )
     loaders['test'] = torch.utils.data.DataLoader(
         test_dataset, batch_size=batch_size, num_workers=num_workers,
-        pin_memory=True, shuffle=True, drop_last=True
+        pin_memory=False, shuffle=True, drop_last=True
     )
 
     return loaders

@@ -248,7 +248,7 @@ def build_model(args=None):
             epoch=args.eval.epoch)
         if training.dataset == 'cifar10':
             num_classes = 10
-        elif training.dataset == 'stl10':
+        elif training.dataset == 'stl10' or training.dataset == 'mini-imagenet':
             num_classes = 100
         elif training.dataset == 'imagenet':
             num_classes = 1000
@@ -263,7 +263,7 @@ def build_model(args=None):
             'feat_dim': feat_dim,
             'num_classes': num_classes
         }
-        model_cls = simclr.LinearClassifier
+        model_cls = bt.LinearClassifier
     model = model_cls(**model_args)
     model = model.to(memory_format=torch.channels_last).cuda()
     return model

@@ -56,7 +56,9 @@ class ImageNetClassifierTransform(nn.Module):
     def __init__(self):
         super().__init__()
         self.transform = transforms.Compose([
-            # transforms.ConvertImageDtype(torch.float32),
+            transforms.CenterCrop(224),
+            transforms.ToTensor(),
+            #transforms.ConvertImageDtype(torch.float32),
             transforms.Normalize(mean=ImageNet_MEAN,
                                  std=ImageNet_STD)
         ])
@@ -131,6 +133,7 @@ class TransformImagenet(nn.Module):
 class Transform:
     def __init__(self):
         self.transform = transforms.Compose([
+            transforms.CenterCrop(224),
             transforms.RandomResizedCrop(224, interpolation=Image.BICUBIC),
             transforms.RandomHorizontalFlip(p=0.5),
             transforms.RandomApply(
