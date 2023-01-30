@@ -2,10 +2,14 @@
 
 Train *better* models *faster* with optimized SSL pipelines.
 
+### Installation
+
 To install and using this library use the following command: 
 
 ```pip install -r requirements.txt -e .```
 
+
+### Training Models
 
 Training SSL   
 ```python scripts/train_model.py --config-file configs/barlow_twins.yaml```
