@@ -112,15 +112,15 @@ def plot_colorplot(attribute_dict, attribute_label, vmin=None, vmax=None, cmap='
 
 
 def plot_scatterplot(
-    attribute1_dict,
-    attribute1_label,
-    attribute2_dict,
-    attribute2_label,
-    group_by_hyperparam='pdim',
-    color=None,
-    filter_dict=None,
-    vmin=None, vmax=None,
-    hmin=None, hmax=None
+        attribute1_dict,
+        attribute1_label,
+        attribute2_dict,
+        attribute2_label,
+        group_by_hyperparam='pdim',
+        color=None,
+        filter_dict=None,
+        vmin=None, vmax=None,
+        hmin=None, hmax=None
 ):
     assert group_by_hyperparam in hyperparam_order.keys(
     ), "{} is not a valid hyperparam".format(group_by_hyperparam)
