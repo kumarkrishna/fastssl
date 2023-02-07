@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-#SBATCH --array=0-79%40
+#SBATCH --array=0-79%80
 #SBATCH --partition=long
 #SBATCH --gres=gpu:rtx8000:1
 #SBATCH --mem=16GB
-#SBATCH --time=10:00:00
+#SBATCH --time=15:00:00
 #SBATCH --cpus-per-gpu=4
-#SBATCH --output=sbatch_out/simclr_cifar10_fastssl_hparam_sweep.%A.%a.out
-#SBATCH --error=sbatch_err/simclr_cifar10_fastssl_hparam_sweep.%A.%a.err
-#SBATCH --job-name=simclr_cifar10_fastssl_hparam_sweep
+#SBATCH --output=sbatch_out/simclr_stl10_fastssl_hparam_sweep.%A.%a.out
+#SBATCH --error=sbatch_err/simclr_stl10_fastssl_hparam_sweep.%A.%a.err
+#SBATCH --job-name=simclr_stl10_fastssl_hparam_sweep
 
 . /etc/profile
 module load anaconda/3
@@ -21,7 +21,8 @@ export MKL_THREADING_LAYER=TBB
 temp_arr=(0.01 0.05 0.1 0.2 0.5)
 # proj_arr=(128 256 512 768 1024 2048)
 proj_arr=(128 256 512 768)
-bsz_arr=(128 256 512 1024)
+# bsz_arr=(128 256 512 1024)  # for cifar10
+bsz_arr=(128 192 256 384)  # for stl10
 
 
 len1=${#temp_arr[@]}
@@ -33,7 +34,7 @@ idx23=$((SLURM_ARRAY_TASK_ID%lenMul23))
 idx2=$((idx23/len3))
 idx3=$((idx23%len3))
 
-dataset='cifar10'
+dataset='stl10'
 temp=${temp_arr[$idx1]}
 projector_dim=${proj_arr[$idx2]}
 batch_size=${bsz_arr[$idx3]}
