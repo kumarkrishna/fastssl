@@ -5,7 +5,9 @@ import os, glob
 from linclab_utils import plot_utils
 from tqdm import tqdm
 from sklearn.metrics import r2_score
+import matplotlib as mpl
 from matplotlib import cm
+from typing import Mapping
 
 plot_utils.linclab_plt_defaults(font="Arial",fontdir=os.path.expanduser('~')+"/Projects/fonts") 	# Run locally, not from cluster
 
@@ -14,10 +16,13 @@ flag_debug = False
 calc_new_alpha = False
 R2_thresh = 0.95
 
+model_arch = 'resnet50'
 dataset_ssl = 'cifar10'
+track_ckpt_dir = os.path.join('checkpoints_design_hparams_track_alpha',
+							model_arch)
+# track_ckpt_dir = 'checkpoints_design_hparams_track_alpha_{}'.format(dataset_ssl)
 
-track_ckpt_dir = 'checkpoints_design_hparams_track_alpha_{}'.format(dataset_ssl)
-ckpt_dir = 'checkpoints_design_hparams_{}'.format(dataset_ssl)
+# ckpt_dir = 'checkpoints_design_hparams_{}'.format(dataset_ssl)
 
 def stringer_get_powerlaw(ss, trange):
     # COPIED FROM Stringer+Pachitariu 2018b github repo! (https://github.com/MouseLand/stringer-pachitariu-et-al-2018b/blob/master/python/utils.py)
@@ -42,13 +47,24 @@ def stringer_get_powerlaw(ss, trange):
         fit_R2_range = None
     return alpha, ypred, fit_R2, fit_R2_range
 
-def plot_alpha_fit(data_dict,trange,lamda_val,pdim_val):
+def plot_alpha_fit(
+	data_dict: Mapping,
+	trange: np.ndarray,
+	lamda_val: float,
+	pdim_val: float, 
+	epoch_val: int = None
+	):
 	eigen = data_dict['eigenspectrum']
 	al,ypred,r2,r2_range = stringer_get_powerlaw(eigen,trange)
 	print(r2,r2_range)
-	plt.loglog(np.arange(1,1+200),eigen[:200])
-	plt.loglog(np.arange(1,1+200),ypred[:200])
-	plt.title("lamda = {:.2e}, pdim = {}, alpha={:.3f}".format(lamda_val,pdim_val,al))
+	plt.figure(figsize=(8,6))
+	plt.loglog(np.arange(1,1+1200),eigen[:1200])
+	plt.loglog(np.arange(1,1+1200),ypred[:1200])
+	plt.title("lamda = {:.2e}, pdim = {},{} alpha={:.3f}".format(
+		lamda_val,
+		pdim_val,
+		' epoch = {},'.format(epoch_val) if epoch_val is not None else '',
+		al))
 	plt.show()
 
 
@@ -140,7 +156,7 @@ for fidx,file in enumerate(tqdm(files_sorted)):
 		# 	R2_dict[pdim_val] = {}
 		# if pdim_val not in R2_100_dict.keys():
 		# 	R2_100_dict[pdim_val] = {}
-		SSL_fname = os.path.join(file,'results_{}_early_alpha_ssl_100.npy'.format(dataset_ssl))
+		SSL_fname = os.path.join(file,'results_{}_alpha_ssl_100.npy'.format(dataset_ssl))
 		epoch_alpha_dict = {}
 		if os.path.exists(SSL_fname): 
 			SSL_file = np.load(SSL_fname,allow_pickle=True).item()
@@ -160,12 +176,21 @@ for fidx,file in enumerate(tqdm(files_sorted)):
 					assert epoch==alpha_series[idx][0], "Epochs for alpha series don't match {} vs {}".format(epoch,alpha_series[idx][0])
 					alpha = alpha_series[idx][1]
 				epoch_alpha_dict[epoch] = alpha
+				if flag_debug:
+					plot_alpha_fit(
+						{'eigenspectrum': eigenspectrum_series[idx][1]},
+						trange = np.arange(3,100),
+						lamda_val=lamda_val,
+						pdim_val=pdim_val,
+						epoch_val=epoch
+					)
 
 		else:
 			# SSL_loss_dict[pdim_val][lamda_val] = np.nan
 			continue
-		res_file = file.replace(track_ckpt_dir,ckpt_dir)
-		linear_files = glob.glob(os.path.join(res_file,'results_{}_early_alpha_linear_200*'.format(dataset_ssl)))
+		linear_files = glob.glob(os.path.join(file,'results_{}_alpha_linear_200*'.format(dataset_ssl)))
+		if len(linear_files) < 3: 
+			continue
 		accuracy_arr = []
 		for linear_fname in linear_files:
 			# linear_fname = os.path.join(file,'results_{}_early_alpha_linear_200.npy'.format(dataset))
@@ -206,20 +231,73 @@ for fidx,file in enumerate(tqdm(files_sorted)):
 			# accuracy_dict[pdim_val][lamda_val].append(final_test_acc)
 			# best_accuracy_dict[pdim_val][lamda_val].append(best_test_acc)
 		accuracy_arr = np.array(accuracy_arr)
+		# if np.mean(accuracy_arr) < 60:
+		# 	continue
 		# tqdm.write("{},{}: {}".format(lamda_val,pdim_val,accuracy_arr))
 		res_all_files.append((epoch_alpha_dict,np.mean(accuracy_arr)))
 		if flag_debug: 
-			# plot_alpha_fit(linear_dict,trange=np.arange(3,100),lamda_val=lamda_val,pdim_val=pdim_val)
+			plot_alpha_fit(
+				linear_dict,
+				trange=np.arange(3,100),
+				lamda_val=lamda_val,
+				pdim_val=pdim_val
+				)
 			breakpoint()
 		
 	except:
 		breakpoint()
 		pass
 
-cscale = cm.get_cmap('coolwarm', 12)
+N_colors = 20
+min_acc_cbar = 70
+cscale = cm.get_cmap('coolwarm', N_colors)
+
+all_fin_accuracy_vals = [res[1] for res in res_all_files]
+all_fin_alpha_vals = [res[0][100] for res in res_all_files]
+min_accuracy = min(all_fin_accuracy_vals)
+max_accuracy = max(all_fin_accuracy_vals)
+
+plt.figure(r'Scatter plot: $\alpha$ vs accuracy')
+plt.ylabel('Accuracy')
+plt.xlabel(r'$\alpha$')
+plt.grid('on')
+plt.ylim([min_acc_cbar,max_accuracy+2])
+
+
+accuracy_range = max_accuracy - min_acc_cbar
 for epoch_alpha, final_accuracy in res_all_files:
-	plt.plot(list(epoch_alpha.keys()),list(epoch_alpha.values()),c=cscale(final_accuracy/100),marker='o',lw=1,alpha=final_accuracy/100)
+	color_idx = int(np.round(N_colors*(final_accuracy-min_acc_cbar)/accuracy_range))
+	plt.figure(r'Scatter plot: $\alpha$ vs accuracy')
+	plt.scatter(epoch_alpha[100],final_accuracy,color=cscale(color_idx))
+	# plt.scatter(all_fin_alpha_vals,all_fin_accuracy_vals)
+
+	plt.figure(r'Evolution of $\alpha$ across SSL pretraining')
+	plt.plot(list(epoch_alpha.keys()),
+			list(epoch_alpha.values()),
+			# c=cscale(final_accuracy/100),
+			# c=cscale(int(np.round(N_colors*(final_accuracy-60)/(100-60)))),
+			c=cscale(color_idx),
+			marker='o',lw=1,
+			alpha=final_accuracy/100,
+			# alpha=1-final_accuracy/100
+			)
+plt.figure(r'Evolution of $\alpha$ across SSL pretraining')
+plt.grid('on')
+print(min_accuracy,max_accuracy)
+# norm = mpl.colors.Normalize(vmin=min_accuracy/100,vmax=max_accuracy/100)
+norm = mpl.colors.Normalize(vmin=0,vmax=2)
+sm = cm.ScalarMappable(cmap=cscale, norm=norm)
+sm.set_array([])
+cbar = plt.colorbar(sm,
+					ticks=np.linspace(0,2,10), 
+					boundaries=np.arange(-0.05,2.1,.1))
+cbar.ax.set_yticklabels(
+	['{:.2f}'.format(i) for i in np.linspace(min_acc_cbar,max_accuracy,10)]
+	)
+plt.ylabel(r'$\alpha$')
+plt.xlabel('SSL pretraining Epochs')
 plt.show()
+
 
 
 ### CODE GRAVEYARD ###
