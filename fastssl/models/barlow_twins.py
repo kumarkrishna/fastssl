@@ -108,7 +108,9 @@ class LinearClassifier(nn.Module):
         self.feat_dim = feat_dim
 
         # define model : backbone(resnet50modified) 
-        self.backbone = BackBone(self.bkey, self.dataset, self.feat_dim)
+        self.backbone = BackBone(name = self.bkey, 
+                                dataset = self.dataset, 
+                                projector_dim = self.feat_dim)
 
         # load pretrained weights
         self.load_backbone(ckpt_path, requires_grad=False)
@@ -135,7 +137,8 @@ class LinearClassifier(nn.Module):
 
     def forward(self, x):
         if 'proj' in self.bkey:
-            # WE WANT TO FORWARD PROPAGATE THROUGH self.backbone() FIRST??
+            x = self.backbone(x)
+            x = torch.flatten(x, start_dim=1)
             feats = self.backbone.proj(x)
         elif 'feat' in self.bkey:
             feats = self.backbone(x)
