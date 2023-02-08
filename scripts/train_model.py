@@ -480,7 +480,7 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args):
                                                                     use_cuda=True)
                 activations_eigen = powerlaw.get_eigenspectrum(activations)
                 alpha,ypred,R2,R2_100 = powerlaw.stringer_get_powerlaw(activations_eigen,
-                                                                    trange=np.arange(5,80))
+                                                                    trange=np.arange(3,100))
                 results['eigenspectrum'].append((epoch,activations_eigen))
                 results['alpha'].append((epoch,alpha))
                 results['R2'].append((epoch,R2))
