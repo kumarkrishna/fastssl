@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 #SBATCH --array=0-239%60
 #SBATCH --partition=long
-#SBATCH --gres=gpu:2g.20gb:1
-#SBATCH --mem=16GB
-#SBATCH --time=6:00:00
+#SBATCH --gres=gpu:rtx8000:1
+#SBATCH --mem=32GB
+#SBATCH --time=10:00:00
 #SBATCH --cpus-per-gpu=4
-#SBATCH --output=sbatch_out/simclr_cifar10_fastssl_arch_hparam_sweep.%A.%a.out
-#SBATCH --error=sbatch_err/simclr_cifar10_fastssl_arch_hparam_sweep.%A.%a.err
-#SBATCH --job-name=simclr_cifar10_fastssl_arch_hparam_sweep
+#SBATCH --output=sbatch_out/simclr_stl10_fastssl_arch_hparam_sweep.%A.%a.out
+#SBATCH --error=sbatch_err/simclr_stl10_fastssl_arch_hparam_sweep.%A.%a.err
+#SBATCH --job-name=simclr_stl10_fastssl_arch_hparam_sweep
 
 . /etc/profile
 module load anaconda/3
@@ -38,7 +38,7 @@ idx23=$((idx123%lenMul23))
 idx2=$((idx23/len3))
 idx3=$((idx23%len3))
 
-dataset='cifar10'
+dataset='stl10'
 temp=${temp_arr[$idx1]}
 projector_dim=${proj_arr[$idx2]}
 batch_size=${bsz_arr[$idx3]}

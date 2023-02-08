@@ -554,5 +554,5 @@ if __name__ == "__main__":
     run_experiment(args)
 
     # wrapup experiments with logging key variables
-    print(f'Total time: {time.time() - start_time:.5f}')
+    print(f'Total time: {time.time() - start_time}')
     print(f'Results saved to {args.training.ckpt_dir}')
