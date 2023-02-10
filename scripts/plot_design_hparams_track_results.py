@@ -8,17 +8,34 @@ from sklearn.metrics import r2_score
 import matplotlib as mpl
 from matplotlib import cm
 from typing import Mapping
+import argparse
 
 plot_utils.linclab_plt_defaults(font="Arial",fontdir=os.path.expanduser('~')+"/Projects/fonts") 	# Run locally, not from cluster
 
-plot_abs = False
-flag_debug = False
-calc_new_alpha = True
-R2_thresh = 0.95
 
-ssl_alg = 'simclr'
+parser = argparse.ArgumentParser(
+	description="Arguments for plotting alpha tracking results")
+parser.add_argument('--flag_debug',
+                    action='store_true')
+parser.add_argument('--use_old_alpha',
+                    action='store_true')
+parser.add_argument('--R2_thresh', type=float,
+		    default=0.95)
+parser.add_argument('--ssl_alg', type=str, 
+		    default='barlowtwins')
+parser.add_argument('--dataset_ssl', type=str,
+		    default='cifar10')
+args = parser.parse_args()
+
+flag_debug = args.flag_debug  # False
+use_old_alpha = args.use_old_alpha  # True
+R2_thresh = args.R2_thresh  # 0.95
+
+ssl_alg = args.ssl_alg  # 'simclr'
+assert ssl_alg in ['barlowtwins','simclr'], "Unrecognized ssl algorithm ({})".format(ssl_alg)
 model_arch = 'resnet50'
-dataset_ssl = 'cifar10'
+dataset_ssl = args.dataset_ssl  # 'cifar10'
+assert dataset_ssl in ['cifar10','stl10'], "Unrecognized ssl dataset ({})".format(dataset_ssl)
 ckpt_main_dir = '{}checkpoints_arch_hparams_track_alpha_{}'.format(
 	'simclr_' if ssl_alg=='simclr' else '',
 	dataset_ssl,
@@ -172,8 +189,8 @@ for fidx,file in enumerate(tqdm(files_sorted)):
 			alpha_series = SSL_file['alpha']
 			for idx, (epoch, eigen) in enumerate(eigenspectrum_series):
 				assert epoch==R2_100_series[idx][0], "Epochs for R2 series don't match {} vs {}".format(epoch,R2_100_series[idx][0])
-				# if (calc_new_alpha and R2_100_series[idx][1]<R2_thresh):
-				if calc_new_alpha:
+				# if (not use_old_alpha and R2_100_series[idx][1]<R2_thresh):
+				if not use_old_alpha:
 					# range_init = 5
 					# range_init = 3
 					range_init = 11
