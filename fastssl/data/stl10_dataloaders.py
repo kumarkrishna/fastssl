@@ -38,8 +38,9 @@ def gen_image_pipeline(device="cuda:0", transform_cls=None, rescale=False):
         ToTorchImage(),
         Convert(torch.float32),
     ]
-    if rescale:
-        image_pipeline.append(ReScale(1.0/255.0))
+    # no rescaling required anymore!
+    # if rescale:
+    #     image_pipeline.append(ReScale(1.0/255.0))
     image_pipeline.append(transform_cls())
 
     return image_pipeline
@@ -138,15 +139,13 @@ def gen_image_label_pipeline_ffcv_test(
     
     loaders = {}
 
-    for split in ['train', 'test']:
-        label_pipeline  = gen_label_pipeline(device=device)
+    for split in ['train']:
         image_pipeline1 = gen_image_pipeline_ffcv_test(
             device=device, transform_cls=transform_cls, rescale=rescale)
         image_pipeline2 = gen_image_pipeline_ffcv_test(
             device=device, transform_cls=transform_cls, rescale=rescale)
 
         ordering = OrderOption.RANDOM #if split == 'train' else OrderOption.SEQUENTIAL
-        # ordering = OrderOption.SEQUENTIAL #if split == 'train' else OrderOption.SEQUENTIAL
 
         # breakpoint()
         loaders[split] = Loader(
@@ -161,6 +160,23 @@ def gen_image_label_pipeline_ffcv_test(
                         # 'label' : label_pipeline}     # The DoubleImage beton files don't have labels
            )
 
+    for split in ['test']:
+        label_pipeline  = gen_label_pipeline(device=device)
+        image_pipeline = gen_image_pipeline(
+            device=device, transform_cls=STLClassifierTransform, rescale=rescale)
+        
+        ordering = OrderOption.RANDOM
+
+        loaders[split] = Loader(
+            datadir[split],
+            batch_size=batch_size,  
+            num_workers=num_workers,
+            os_cache=True,
+            order=ordering,
+            drop_last=False,
+            pipelines={'image' : image_pipeline, 'label' : label_pipeline}
+           )
+
     return loaders
 
 def stl_ffcv(
@@ -170,7 +186,6 @@ def stl_ffcv(
     num_workers=None,
     device="cuda:0"):
 
-    # transform_cls = CifarTransform
     transform_cls = STLTransformFFCV()
     return gen_image_label_pipeline_ffcv_test(
         train_dataset=train_dataset,
