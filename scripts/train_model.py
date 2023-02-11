@@ -36,7 +36,7 @@ from fastargs import Section, Param
 
 from fastssl.data import cifar_ffcv, cifar_classifier_ffcv, cifar_pt, stl_ffcv, stl10_pt, stl_classifier_ffcv
 from fastssl.models import barlow_twins as bt
-from fastssl.models import byol, simclr
+from fastssl.models import linear, byol, simclr
 
 from fastssl.utils.base import set_seeds, get_args_from_config, merge_with_args
 import fastssl.utils.powerlaw as powerlaw
@@ -135,6 +135,8 @@ def build_dataloaders(
                 # num_workers=num_workers)
         else:
             raise Exception("Algorithm not implemented")
+    else:
+        raise Exception("Dataset {} not supported".format(dataset))
 
 
 def gen_ckpt_path(
@@ -227,7 +229,7 @@ def build_model(args=None):
             'feat_dim': training.projector_dim if 'proj' in training.model else 2048,
             'num_classes': 10 if training.dataset in ['cifar10','stl10'] else 100, # STL10 evals could be underestimated because if condition changed later (July 4)
         }
-        model_cls = bt.LinearClassifier
+        model_cls = linear.LinearClassifier
 
     model = model_cls(**model_args)
     model = model.to(memory_format=torch.channels_last).cuda()
@@ -485,6 +487,7 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args):
                 results['alpha'].append((epoch,alpha))
                 results['R2'].append((epoch,R2))
                 results['R2_100'].append((epoch,R2_100))
+                # print(results['alpha'])
                 
     return results
 
