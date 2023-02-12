@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-#SBATCH --array=0-79%16
+#SBATCH --array=0-79%20
 #SBATCH --partition=long
 #SBATCH --gres=gpu:a100:1
 #SBATCH --reservation=DGXA100
 #SBATCH --mem=16GB
-#SBATCH --time=3:00:00
+#SBATCH --time=6:30:00
 #SBATCH --cpus-per-gpu=4
 #SBATCH --output=sbatch_out/simclr_track_alpha_hparam_sweep.%A.%a.out
 #SBATCH --error=sbatch_err/simclr_track_alpha_hparam_sweep.%A.%a.err
@@ -22,8 +22,14 @@ export MKL_THREADING_LAYER=TBB
 temp_arr=(0.01 0.05 0.1 0.2 0.5)
 # proj_arr=(128 256 512 768 1024 2048)
 proj_arr=(128 256 512 768)
-bsz_arr=(128 256 512 1024)  # for cifar10
-# bsz_arr=(128 192 256 384)  # for stl10
+
+dataset='stl10'
+if [ $dataset = 'stl10' ]
+then
+    bsz_arr=(128 192 256 384)  # for stl10
+else
+    bsz_arr=(128 256 512 1024)  # for cifar10
+fi
 
 
 len1=${#temp_arr[@]}
@@ -35,7 +41,6 @@ idx23=$((SLURM_ARRAY_TASK_ID%lenMul23))
 idx2=$((idx23/len3))
 idx3=$((idx23%len3))
 
-dataset='cifar10'
 temp=${temp_arr[$idx1]}
 projector_dim=${proj_arr[$idx2]}
 batch_size=${bsz_arr[$idx3]}
@@ -45,7 +50,6 @@ model_name=resnet50proj
 python scripts/train_model.py --config-file configs/cc_SimCLR.yaml --training.temperature=$temp --training.projector_dim=$projector_dim --training.model=$model_name --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir --training.batch_size=$batch_size --training.track_alpha=True --training.log_interval=2
 
 model_name=resnet50feat
-dataset='cifar10'
 python scripts/train_model.py --config-file configs/cc_classifier.yaml --eval.train_algorithm='SimCLR' --training.temperature=$temp --training.projector_dim=$projector_dim --training.model=$model_name --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir --training.seed=1 --training.batch_size=$batch_size
 python scripts/train_model.py --config-file configs/cc_classifier.yaml --eval.train_algorithm='SimCLR' --training.temperature=$temp --training.projector_dim=$projector_dim --training.model=$model_name --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir --training.seed=2 --training.batch_size=$batch_size
 python scripts/train_model.py --config-file configs/cc_classifier.yaml --eval.train_algorithm='SimCLR' --training.temperature=$temp --training.projector_dim=$projector_dim --training.model=$model_name --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir --training.seed=3 --training.batch_size=$batch_size
