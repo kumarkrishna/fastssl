@@ -4,7 +4,8 @@
 #SBATCH --gres=gpu:a100:1
 #SBATCH --reservation=DGXA100
 #SBATCH --mem=16GB
-#SBATCH --time=6:30:00
+#####SBATCH --time=3:30:00  # cifar10
+#SBATCH --time=6:30:00  # stl10
 #SBATCH --cpus-per-gpu=4
 #SBATCH --output=sbatch_out/simclr_track_alpha_hparam_sweep.%A.%a.out
 #SBATCH --error=sbatch_err/simclr_track_alpha_hparam_sweep.%A.%a.err
