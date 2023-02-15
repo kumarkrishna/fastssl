@@ -1,0 +1,14 @@
+
+program: scripts/train_model.py
+method: grid
+name: projector_dim and lambda sweep correct
+parameters:
+    training.projector_dim:
+      values: [128, 256, 512]
+    training.lambd:
+      values: [0.001, 0.00397897]
+    training.dataset:
+      value: 'cifar10'
+    config-file:
+      value: configs/cc_barlow_twins.yaml
+    

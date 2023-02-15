@@ -13,6 +13,7 @@ debug_imgs/
 ._*
 sbatch_out/
 sbatch_err/
+wandb/
 **/._*.py
 **/*.DS_Store
 
