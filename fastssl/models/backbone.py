@@ -12,7 +12,9 @@ class BackBone(nn.Module):
                  hidden_dim=128):
         super(BackBone, self).__init__()
         self.name = name
-        self.build_backbone(dataset=dataset, projector_dim=projector_dim, hidden_dim=hidden_dim)
+        self.build_backbone(dataset=dataset, 
+                            projector_dim=projector_dim, 
+                            hidden_dim=hidden_dim)
 
     def build_backbone(self, dataset='cifar10', projector_dim=128, hidden_dim=512):
         """

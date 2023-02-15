@@ -39,8 +39,9 @@ def gen_image_pipeline(device="cuda:0", transform_cls=None, rescale=False):
         ToTorchImage(),
         Convert(torch.float32),
     ]
-    if rescale:
-        image_pipeline.append(ReScale(1.0/255.0))
+    # no rescaling required anymore!
+    # if rescale:
+    #     image_pipeline.append(ReScale(1.0/255.0))
     image_pipeline.append(transform_cls())
 
     return image_pipeline
@@ -195,8 +196,8 @@ def cifar_ffcv(
         batch_size=batch_size,
         num_workers=num_workers,
         transform_cls=transform_cls,
-        rescale=True,
-        # rescale=False,
+        # rescale=True,
+        rescale=False,
         device=device)
 
 def cifar_classifier_ffcv(
