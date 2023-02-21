@@ -36,7 +36,7 @@ from fastargs import Section, Param
 
 from fastssl.data import cifar_ffcv, cifar_classifier_ffcv, cifar_pt, stl_ffcv, stl10_pt, stl_classifier_ffcv
 from fastssl.models import barlow_twins as bt
-from fastssl.models import linear, byol, simclr
+from fastssl.models import linear, byol, simclr, spectralreg
 
 from fastssl.utils.base import set_seeds, get_args_from_config, merge_with_args
 import fastssl.utils.powerlaw as powerlaw
@@ -44,12 +44,16 @@ import fastssl.utils.powerlaw as powerlaw
 Section('training', 'Fast CIFAR-10 training').params(
     dataset=Param(
         str, 'dataset', default='cifar10'),
-    datadir=Param(
-        str, 'train data dir', default='/data/krishna/data/cifar'),
     train_dataset=Param(
         str, 'train-dataset', default='/data/krishna/data/ffcv/cifar_train.beton'),
     val_dataset=Param(
         str, 'valid-dataset', default='/data/krishna/data/ffcv/cifar_test.beton'),
+    ffcv_datadir=Param(
+        str, 'FFCV data directory', default='/network/projects/_groups/linclab_users/ffcv/ffcv_datasets'),
+    train_data_fname=Param(
+        str, 'train-dataset filename', default='train.beton'),
+    val_data_fname=Param(
+        str, 'valid-dataset filename', default='test.beton'),
     batch_size=Param(
         int, 'batch-size', default=512),
     epochs=Param(
@@ -58,6 +62,10 @@ Section('training', 'Fast CIFAR-10 training').params(
         float, 'learning-rate', default=1e-3),
     weight_decay=Param(
         float, 'weight_decay', default=1e-6),
+    spectral_loss_weight=Param(
+        float, 'weight of spectral loss', default=0.01),
+    hypersphere_radius=Param(
+        float, 'radius min variance hypersphere', default=0.3),
     lambd=Param(
         float, 'lambd for BarlowTwins', default=1/128),
     momentum_tau=Param(
@@ -79,7 +87,7 @@ Section('training', 'Fast CIFAR-10 training').params(
     log_interval=Param(
         int, 'log-interval in terms of epochs', default=20),
     ckpt_dir=Param(
-        str, 'ckpt-dir', default='/data/krishna/research/results/0319/001/checkpoints'),
+        str, 'ckpt-dir', default='/checkpoints'),
     use_autocast=Param(
         bool, 'autocast fp16', default=True),
     track_alpha=Param(
@@ -97,13 +105,13 @@ Section('eval', 'Fast CIFAR-10 evaluation').params(
 def build_dataloaders(
     dataset='cifar10',
     algorithm='ssl',
-    datadir='data/',
+    # datadir='data/',
     train_dataset=None,
     val_dataset=None,
     batch_size=128,
     num_workers=2):
     if 'cifar' in dataset:
-        if algorithm in ('BarlowTwins', 'SimCLR', 'ssl', 'byol'):
+        if algorithm in ('BarlowTwins', 'SimCLR', 'ssl', 'byol', 'spectralReg'):
             # return cifar_pt(
             #     datadir, batch_size=batch_size, num_workers=num_workers)
             # for ffcv cifar10 dataloader
@@ -117,7 +125,7 @@ def build_dataloaders(
         else:
             raise Exception("Algorithm not implemented")
     elif dataset == 'stl10':
-        if algorithm in ('BarlowTwins', 'SimCLR', 'ssl', 'byol'):
+        if algorithm in ('BarlowTwins', 'SimCLR', 'ssl', 'byol', 'spectralReg'):
             # return stl10_pt(
             #     datadir,
             #     splits=["unlabeled"],
@@ -146,9 +154,57 @@ def gen_ckpt_path(
     prefix='exp', 
     suffix='pth'
 ):
+    # if suffix=='pth':
+    #     main_dir = os.environ['SLURM_TMPDIR']
+    #     ckpt_dir = main_dir
+    #     ckpt_path = os.path.join(ckpt_dir, '{}_{}_{}{}.{}'.format(
+    #         prefix, 
+    #         eval_args.train_algorithm if 'linear' in args.algorithm else args.algorithm, 
+    #         epoch, 
+    #         '_seed_{}'.format(args.seed) if 'linear' in eval_args.train_algorithm else '',
+    #         suffix))
+    # else:
+    main_dir = args.ckpt_dir
+    model_name = args.model
+    model_name = model_name.replace('proj','')
+    model_name = model_name.replace('pred','')
+    model_name = model_name.replace('feat','')
+    main_dir = os.path.join(main_dir,model_name)
+    if args.algorithm == 'linear':
+        dir_algorithm = eval_args.train_algorithm
+    else:
+        dir_algorithm = args.algorithm
+    if dir_algorithm in ['ssl','BarlowTwins']:
+        ckpt_dir = os.path.join(
+            main_dir, 'lambd_{:.6f}_pdim_{}{}_lr_{}_wd_{}'.format(
+                        args.lambd,
+                        args.projector_dim,
+                        '_no_autocast' if not args.use_autocast else '',
+                        args.lr, args.weight_decay))
+    elif dir_algorithm in ['SimCLR']:
+        ckpt_dir = os.path.join(
+            main_dir, 'temp_{:.3f}_pdim_{}{}_bsz_{}_lr_{}_wd_{}'.format(
+                        args.temperature,
+                        args.projector_dim,
+                        '_no_autocast' if not args.use_autocast else '',
+                        args.batch_size,args.lr, args.weight_decay))
+    elif dir_algorithm in ['byol']:
+        ckpt_dir = os.path.join(
+            main_dir, 'tau_{:.3f}_pdim_{}{}_bsz_{}_lr_{}_wd_{}'.format(
+                        args.momentum_tau,
+                        args.projector_dim,
+                        '_no_autocast' if not args.use_autocast else '',
+                        args.batch_size,args.lr, args.weight_decay))
+    elif dir_algorithm in ['spectralReg']:
+        ckpt_dir = os.path.join(
+            main_dir, 'spectral_loss_weight_{:.4f}_hypersphere_radius_{}_pdim_{}{}_bsz_{}_lr_{}_wd_{}'.format(
+                        args.spectral_loss_weight,
+                        args.hypersphere_radius,
+                        args.projector_dim,
+                        '_no_autocast' if not args.use_autocast else '',
+                        args.batch_size,args.lr, args.weight_decay))
+    # create ckpt file name
     if suffix=='pth':
-        main_dir = os.environ['SLURM_TMPDIR']
-        ckpt_dir = main_dir
         ckpt_path = os.path.join(ckpt_dir, '{}_{}_{}{}.{}'.format(
             prefix, 
             eval_args.train_algorithm if 'linear' in args.algorithm else args.algorithm, 
@@ -156,30 +212,6 @@ def gen_ckpt_path(
             '_seed_{}'.format(args.seed) if 'linear' in eval_args.train_algorithm else '',
             suffix))
     else:
-        main_dir = args.ckpt_dir
-        model_name = args.model
-        model_name = model_name.replace('proj','')
-        model_name = model_name.replace('feat','')
-        main_dir = os.path.join(main_dir,model_name)
-        if args.algorithm == 'linear':
-            dir_algorithm = eval_args.train_algorithm
-        else:
-            dir_algorithm = args.algorithm
-        if dir_algorithm in ['ssl','BarlowTwins']:
-            ckpt_dir = os.path.join(
-                main_dir, 'lambd_{:.6f}_pdim_{}{}_lr_{}_wd_{}'.format(
-                            args.lambd,
-                            args.projector_dim,
-                            '_no_autocast' if not args.use_autocast else '',
-                            args.lr, args.weight_decay))
-        elif dir_algorithm in ['SimCLR']:
-            ckpt_dir = os.path.join(
-                main_dir, 'temp_{:.3f}_pdim_{}{}_bsz_{}_lr_{}_wd_{}'.format(
-                            args.temperature,
-                            args.projector_dim,
-                            '_no_autocast' if not args.use_autocast else '',
-                            args.batch_size,args.lr, args.weight_decay))
-        # create ckpt file name
         ckpt_path = os.path.join(ckpt_dir, '{}_{}_{}{}.{}'.format(
             prefix, 
             args.algorithm, 
@@ -199,7 +231,7 @@ def build_model(args=None):
     training = args.training
     eval = args.eval
 
-    if training.algorithm in ('BarlowTwins', 'SimCLR', 'ssl', 'byol'):
+    if training.algorithm in ('BarlowTwins', 'SimCLR', 'ssl', 'byol', 'spectralReg'):
         model_args = {
             'bkey': training.model,
             'dataset': training.dataset,
@@ -207,8 +239,11 @@ def build_model(args=None):
             }
         
         if training.algorithm in ('byol'):
-            model_args['hidden_dim'] = training.hidden_dim
+            model_args['hidden_dim'] = training.projector_dim
             model_cls = byol.BYOL
+        elif training.algorithm in ('spectralReg'):
+            model_args['hidden_dim'] = training.projector_dim
+            model_cls = spectralreg.SpectralReg
         elif training.algorithm in ('SimCLR'):
             # setting projector dim and hidden dim the same for SimCLR projector
             model_args['hidden_dim'] = training.projector_dim
@@ -243,6 +278,10 @@ def build_loss_fn(args=None):
         return byol.BYOLLoss
     elif args.algorithm == 'SimCLR':
         return partial(simclr.SimCLRLoss, _temperature=args.temperature)
+    elif args.algorithm == 'spectralReg':
+        return partial(spectralreg.SpectralRegLoss, 
+        hypersphere_radius=args.hypersphere_radius, 
+        spectral_loss_weight=args.spectral_loss_weight)
     elif args.algorithm == 'linear':
         def classifier_xent(model, inp):
             x, y = inp
@@ -264,7 +303,7 @@ def build_optimizer(model, args=None):
     Returns:
         optimizer : optimizer for training model
     """
-    if args.algorithm in ('BarlowTwins', 'SimCLR', 'ssl', 'byol'):
+    if args.algorithm in ('BarlowTwins', 'SimCLR', 'ssl', 'byol', 'spectralReg'):
         return Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     elif args.algorithm == 'linear':
         default_lr = 1e-3
@@ -316,7 +355,7 @@ def train_step(model, dataloader, args, target_model=None, optimizer=None, loss_
             with autocast():
                 if args.algorithm == 'byol':
                     loss = loss_fn(model, target_model, inp)
-                elif args.algorithm in ('BarlowTwins', 'SimCLR', 'ssl', 'linear'):
+                elif args.algorithm in ('BarlowTwins', 'SimCLR', 'ssl', 'linear', 'spectralReg'):
                     loss = loss_fn(model, inp)
                 else:
                     raise Exception('Algorithm not implemented')
@@ -332,14 +371,15 @@ def train_step(model, dataloader, args, target_model=None, optimizer=None, loss_
         total_loss += loss.item() 
         num_batches += 1
 
-        if args.algorithm == 'byol':
-            byol.update_state_dict(target_model, model.state_dict(), args.momentum_tau)
-
         # import ray
         # if ray.tune.is_session_enabled():
         #     tune.report(epoch=epoch, loss=total_loss/num_batches)
         train_bar.set_description(
             'Train Epoch: [{}/{}] Loss: {:.4f}'.format(epoch, args.epochs, total_loss / num_batches))
+    
+    if args.algorithm == 'byol':
+            byol.update_state_dict(target_model, model.state_dict(), args.momentum_tau)
+    
     return total_loss / num_batches
 
 def eval_step(model, dataloader, epoch=None, epochs=None):
@@ -507,7 +547,7 @@ def run_experiment(args):
     loaders = build_dataloaders(
         training.dataset,
         training.algorithm,
-        training.datadir,
+        # training.datadir,
         training.train_dataset,
         training.val_dataset,
         training.batch_size,
@@ -550,9 +590,11 @@ def bt_trainer(config):
 if __name__ == "__main__":
     # gather arguments 
     args = get_args_from_config()
-    args.training.datadir = args.training.datadir.format(dataset=args.training.dataset)
-    args.training.train_dataset = args.training.train_dataset.format(dataset=args.training.dataset)
-    args.training.val_dataset = args.training.val_dataset.format(dataset=args.training.dataset)
+    
+
+    # args.training.datadir = args.training.datadir.format(dataset=args.training.dataset)
+    # args.training.train_dataset = args.training.train_dataset.format(dataset=args.training.dataset)
+    # args.training.val_dataset = args.training.val_dataset.format(dataset=args.training.dataset)
 
     # train model 
     start_time = time.time()

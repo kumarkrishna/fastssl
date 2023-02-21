@@ -1,13 +1,16 @@
 training:
   dataset: 'cifar10'
-  datadir: '/network/datasets/{dataset}.var/{dataset}_torchvision/'
-  train_dataset: '/network/projects/_groups/linclab_users/ffcv/ffcv_datasets/{dataset}/train.beton'
-  val_dataset: '/network/projects/_groups/linclab_users/ffcv/ffcv_datasets/{dataset}/test.beton'
+  ffcv_datadir: /home/mila/a/arnab.mondal/scratch/ffcv/ffcv_datasets
+  train_data_fname: train.beton
+  val_data_fname: test.beton
+  # train_dataset: {ffcv_datadir}/{dataset}/{train_data_fname}
+  # val_dataset: {ffcv_datadir}/{dataset}/{val_data_fname}
   batch_size: 512
   epochs: 200
   lambd: 0.0078125
   temperature: 0.1
   projector_dim: 128
+  momentum_tau: 0.01
   seed: 42
   algorithm: 'linear'
   model: 'resnet50feat'

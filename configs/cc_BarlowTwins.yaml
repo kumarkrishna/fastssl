@@ -5,12 +5,12 @@ training:
   val_dataset: ${env:FFCV_DATA_DIR}/{dataset}/test.beton
   batch_size: 512
   epochs: 100
-  temperature: 0.1
+  lambd: 0.0078125
   projector_dim: 128
   seed: 42
-  algorithm: 'SimCLR'
+  algorithm: 'ssl'
   model: 'resnet50proj'
   num_workers: 4
-  ckpt_dir: 'checkpoints'
+  ckpt_dir: ${env:CHECKPOINT_DIR}
   use_autocast: True
   log_interval: 100

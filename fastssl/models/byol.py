@@ -24,7 +24,6 @@ def BYOLLoss(model, model_target, inp):
     (x1, x2), _ = inp
     x1, x2 = x1.cuda(non_blocking=True), x2.cuda(non_blocking=True)
     bsz = x1.shape[0]
-
     
     # forward pass
     z1 = model(x1, use_predictor=True)   #NXD

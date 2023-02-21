@@ -1,0 +1,18 @@
+training:
+  dataset: 'cifar10'
+  ffcv_datadir: /network/projects/_groups/linclab_users/ffcv/ffcv_datasets
+  train_data_fname: doubleImage_train.beton
+  val_data_fname: test.beton
+  # train_dataset: {ffcv_datadir}/{dataset}/{train_data_fname}
+  # val_dataset: {ffcv_datadir}/{dataset}/{val_data_fname}
+  batch_size: 512
+  epochs: 100
+  momentum_tau: 0.01
+  projector_dim: 128
+  seed: 42
+  algorithm: 'byol'
+  model: 'resnet50projpred'
+  num_workers: 4
+  ckpt_dir: /network/projects/_groups/linclab_users/fastssl/checkpoints
+  use_autocast: True
+  log_interval: 100
