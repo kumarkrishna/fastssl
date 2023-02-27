@@ -17,3 +17,4 @@ training:
   ckpt_dir: /network/projects/_groups/linclab_users/fastssl/checkpoints
   use_autocast: True
   log_interval: 100
+  algo_version: 1

@@ -5,12 +5,14 @@ parameters:
     training.projector_dim:
       values: [64, 128, 256]
     training.spectral_loss_weight:
-      values: [0.001, 0.01, 0.1, 1 , 10]
+      values: [1, 5, 10]
     training.hypersphere_radius:
-      values: [0.2, 0.3, 0.5]
+      values: [0.6, 0.8, 1.0, 2.0]
     training.dataset:
       value: 'cifar10'
     training.algorithm:
       value: 'spectralReg'
+    training.algo_version:
+      values: ['2', '3', '4', '5']
     training.epochs:
       value: 100

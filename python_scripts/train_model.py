@@ -92,6 +92,10 @@ Section('training', 'Fast CIFAR-10 training').params(
         bool, 'autocast fp16', default=True),
     track_alpha=Param(
         bool, 'Track evolution of alpha', default=False),
+    use_wandb=Param(
+        bool, 'Whether to use wandb_logging', default=False),
+    algo_version=Param(
+        str, 'version of the self-supervised learning algorithm', default='1'),
 )
 
 Section('eval', 'Fast CIFAR-10 evaluation').params(
@@ -169,7 +173,7 @@ def gen_ckpt_path(
     model_name = model_name.replace('proj','')
     model_name = model_name.replace('pred','')
     model_name = model_name.replace('feat','')
-    main_dir = os.path.join(main_dir,model_name)
+    main_dir = os.path.join(main_dir, model_name)
     if args.algorithm == 'linear':
         dir_algorithm = eval_args.train_algorithm
     else:
@@ -189,6 +193,7 @@ def gen_ckpt_path(
                         '_no_autocast' if not args.use_autocast else '',
                         args.batch_size,args.lr, args.weight_decay))
     elif dir_algorithm in ['byol']:
+        main_dir = os.path.join(main_dir, eval_args.train_algorithm if 'linear' in args.algorithm else args.algorithm)
         ckpt_dir = os.path.join(
             main_dir, 'tau_{:.3f}_pdim_{}{}_bsz_{}_lr_{}_wd_{}'.format(
                         args.momentum_tau,
@@ -196,13 +201,15 @@ def gen_ckpt_path(
                         '_no_autocast' if not args.use_autocast else '',
                         args.batch_size,args.lr, args.weight_decay))
     elif dir_algorithm in ['spectralReg']:
+        main_dir = os.path.join(main_dir, eval_args.train_algorithm if 'linear' in args.algorithm else args.algorithm, 'version_' + args.algo_version)
         ckpt_dir = os.path.join(
             main_dir, 'spectral_loss_weight_{:.4f}_hypersphere_radius_{}_pdim_{}{}_bsz_{}_lr_{}_wd_{}'.format(
                         args.spectral_loss_weight,
                         args.hypersphere_radius,
                         args.projector_dim,
                         '_no_autocast' if not args.use_autocast else '',
-                        args.batch_size,args.lr, args.weight_decay))
+                        args.batch_size,args.lr, 
+                        args.weight_decay))
     # create ckpt file name
     if suffix=='pth':
         ckpt_path = os.path.join(ckpt_dir, '{}_{}_{}{}.{}'.format(
@@ -281,7 +288,8 @@ def build_loss_fn(args=None):
     elif args.algorithm == 'spectralReg':
         return partial(spectralreg.SpectralRegLoss, 
         hypersphere_radius=args.hypersphere_radius, 
-        spectral_loss_weight=args.spectral_loss_weight)
+        spectral_loss_weight=args.spectral_loss_weight,
+        version=args.algo_version)
     elif args.algorithm == 'linear':
         def classifier_xent(model, inp):
             x, y = inp
@@ -576,7 +584,9 @@ def run_experiment(args):
                             'results_{}_alpha'.format(training.dataset), 'npy')
     # with open(save_path, 'wb') as f:
         # pickle.dump(results, f)
-    np.save(save_path,results)
+    np.save(save_path, results)
+    # if args.algorithm == 'linear':
+    #     wandb.log(results)
 
 
 def bt_trainer(config):
@@ -595,7 +605,6 @@ if __name__ == "__main__":
     # args.training.datadir = args.training.datadir.format(dataset=args.training.dataset)
     # args.training.train_dataset = args.training.train_dataset.format(dataset=args.training.dataset)
     # args.training.val_dataset = args.training.val_dataset.format(dataset=args.training.dataset)
-
     # train model 
     start_time = time.time()
     run_experiment(args)

@@ -10,7 +10,7 @@ from fastssl.data.imagenet_dataloaders import TransformGPU
 ssl_transform = CifarTransform()
 
 
-def SpectralRegLoss(model, inp, hypersphere_radius=0.3, spectral_loss_weight=None):
+def SpectralRegLoss(model, inp, hypersphere_radius=0.3, spectral_loss_weight=None, version=None):
     """
     Peform model forward pass and compute the BarlowTwin loss.
 
@@ -30,19 +30,74 @@ def SpectralRegLoss(model, inp, hypersphere_radius=0.3, spectral_loss_weight=Non
     
     # forward pass
     z1 = model(x1)
-    z2 = model(x2).detach()
-
+    z2 = model(x2)
     z1_norm = (z1 - z1.mean(0)) / z1.std(0) # NxD
     z2_norm = (z2 - z2.mean(0)) / z2.std(0) # NxD
 
-    variance = torch.mm(z1_norm.T, z1_norm) / bsz # DxD
-    eigenvals = torch.linalg.eigvals(variance.to(torch.float32)).real
-    spectral_loss = torch.maximum(
-        hypersphere_radius - eigenvals, 
-        torch.zeros_like(eigenvals).to(eigenvals.device)
-    ).mean()
-    
-    invariance_loss = torch.mean((z1_norm - z2_norm) ** 2)
+    if version == '1':       
+        z2_norm = z2_norm.detach()
+
+        variance = torch.mm(z1_norm.T, z1_norm) / bsz # DxD
+        eigenvals = torch.linalg.eigvals(variance.to(torch.float32)).real
+        spectral_loss = torch.maximum(
+            hypersphere_radius - eigenvals, 
+            torch.zeros_like(eigenvals).to(eigenvals.device)
+        ).mean()
+        
+        invariance_loss = torch.mean((z1_norm - z2_norm) ** 2)
+
+    elif version == '2':
+        variance_z1 = torch.mm(z1_norm.T, z1_norm) / bsz # DxD
+        eigenvals_z1 = torch.linalg.eigvals(variance_z1.to(torch.float32)).real
+
+        variance_z2 = torch.mm(z2_norm.T, z2_norm) / bsz # DxD
+        eigenvals_z2 = torch.linalg.eigvals(variance_z2.to(torch.float32)).real
+
+        spectral_loss = torch.maximum(
+            hypersphere_radius - eigenvals_z1, 
+            torch.zeros_like(eigenvals_z1).to(eigenvals_z1.device)
+        ).mean() + torch.maximum(
+            hypersphere_radius - eigenvals_z2, 
+            torch.zeros_like(eigenvals_z2).to(eigenvals_z2.device)
+        ).mean()
+        
+        invariance_loss = torch.mean((z1_norm - z2_norm) ** 2)
+
+    elif version == '3':
+        z2_norm = z2_norm.detach()
+
+        variance = torch.mm(z1_norm.T, z1_norm) / bsz # DxD
+        eigenvals = torch.linalg.eigvals(variance.to(torch.float32)).real
+        spectral_loss = torch.maximum(
+            hypersphere_radius - eigenvals, 
+            torch.zeros_like(eigenvals).to(eigenvals.device)
+        ).mean()
+        
+        invariance_loss = ((1 - (z1_norm * z2_norm).sum(dim=-1))**2).mean()
+
+    elif version == '4':
+        z2_norm = z2_norm.detach()
+
+        variance = torch.mm(z1_norm.T, z1_norm) / bsz # DxD
+        eigenvals = torch.linalg.eigvals(variance.to(torch.float32)).real
+        spectral_loss = torch.maximum(
+            hypersphere_radius - eigenvals, 
+            torch.zeros_like(eigenvals).to(eigenvals.device)
+        ).mean()
+        
+        invariance_loss = (2 - 2 * (F.normalize(z1_norm, dim=-1, p=2) * F.normalize(z2_norm, dim=-1, p=2)).sum(dim=-1)).mean()
+
+    elif version == '5':
+        z2_norm = z2_norm.detach()
+
+        variance = torch.mm(z1_norm.T, z1_norm) / bsz # DxD
+        eigenvals = torch.linalg.eigvals(variance.to(torch.float32)).real
+        spectral_loss = torch.maximum(
+            hypersphere_radius - eigenvals, 
+            torch.zeros_like(eigenvals).to(eigenvals.device)
+        ).mean()
+        
+        invariance_loss = (2 - 2 * (F.normalize(z1_norm, dim=-1, p=2) * F.normalize(z2_norm, dim=-1, p=2)).sum(dim=-1)).mean()
 
     loss = invariance_loss + spectral_loss_weight * spectral_loss
     return loss

@@ -29,10 +29,10 @@ def BYOLLoss(model, model_target, inp):
     z1 = model(x1, use_predictor=True)   #NXD
     z2 = model_target(x2).detach()       #NXD
 
-    z1_norm = F.normalize(z1, dim=-1) 
-    z2_norm = F.normalize(z2, dim=-1) 
+    z1_norm = F.normalize(z1, dim=-1, p=2) 
+    z2_norm = F.normalize(z2, dim=-1, p=2)
     
-    loss = ((z1_norm - z2_norm)**2).mean()
+    loss = (2 - 2 * (z1_norm * z2_norm).sum(dim=-1)).mean()
 
     return loss
 
