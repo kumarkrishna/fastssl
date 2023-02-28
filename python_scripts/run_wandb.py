@@ -1,4 +1,5 @@
 import os, sys, subprocess
+import wandb
 
 all_args = sys.argv[1:]
 
@@ -9,6 +10,8 @@ config_files_dict = {
     'spectralReg': 'cc_spectralReg.yaml',
 }
 seeds = [1, 2, 3]
+
+wandb.init(entity='eigengroup', project='fastssl')
 
 ssl_train_cmd = 'python python_scripts/train_model.py'
 for arg in all_args:
@@ -30,3 +33,5 @@ for seed in seeds:
         linear_eval_cmd += ' {}'.format(arg)
     print(linear_eval_cmd)
     os.system(linear_eval_cmd)
+
+# wandb.log({'command': ssl_train_cmd})

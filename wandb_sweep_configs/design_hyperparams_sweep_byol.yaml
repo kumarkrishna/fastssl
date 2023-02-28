@@ -1,7 +1,7 @@
 
 program: python_scripts/run_wandb.py
 method: grid
-name: projector dim and momentum tau sweep
+name: projector dim and momentum tau sweep of byol
 parameters:
     training.projector_dim:
       values: [64, 128, 256, 512]

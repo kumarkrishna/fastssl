@@ -1,6 +1,6 @@
 program: python_scripts/run_wandb.py
 method: grid
-name: projector dim and momentum tau sweep
+name: version 3 sweep of spectral reg
 parameters:
     training.projector_dim:
       values: [64, 128, 256]
@@ -13,6 +13,6 @@ parameters:
     training.algorithm:
       value: 'spectralReg'
     training.algo_version:
-      values: ['2', '3', '4', '5']
+      value: '3'
     training.epochs:
       value: 100

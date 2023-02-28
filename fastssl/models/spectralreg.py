@@ -89,6 +89,7 @@ def SpectralRegLoss(model, inp, hypersphere_radius=0.3, spectral_loss_weight=Non
 
     elif version == '5':
         z2_norm = z2_norm.detach()
+        z2 = z2.detach()
 
         variance = torch.mm(z1_norm.T, z1_norm) / bsz # DxD
         eigenvals = torch.linalg.eigvals(variance.to(torch.float32)).real
@@ -97,7 +98,7 @@ def SpectralRegLoss(model, inp, hypersphere_radius=0.3, spectral_loss_weight=Non
             torch.zeros_like(eigenvals).to(eigenvals.device)
         ).mean()
         
-        invariance_loss = (2 - 2 * (F.normalize(z1_norm, dim=-1, p=2) * F.normalize(z2_norm, dim=-1, p=2)).sum(dim=-1)).mean()
+        invariance_loss = (2 - 2 * (F.normalize(z1, dim=-1, p=2) * F.normalize(z2, dim=-1, p=2)).sum(dim=-1)).mean()
 
     loss = invariance_loss + spectral_loss_weight * spectral_loss
     return loss
