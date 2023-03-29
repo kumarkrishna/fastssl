@@ -15,17 +15,20 @@ class LinearClassifier(nn.Module):
                  bkey="resnet50feat",
                  ckpt_path=None, 
                  ckpt_epoch=None,
-                 feat_dim=2048):
+                 feat_dim=2048,
+                 proj_hidden_dim=128):
         super(LinearClassifier, self).__init__()
         # set arguments
         self.bkey = bkey
         self.dataset = dataset
         self.feat_dim = feat_dim
+        self.proj_hidden_dim = proj_hidden_dim
 
         # define model : backbone(resnet50modified) 
         self.backbone = BackBone(name = self.bkey, 
                                 dataset = self.dataset, 
-                                projector_dim = self.feat_dim)
+                                projector_dim = self.feat_dim,
+                                hidden_dim=proj_hidden_dim)
 
         # load pretrained weights
         self.load_backbone(ckpt_path, requires_grad=False)
