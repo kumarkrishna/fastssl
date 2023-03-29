@@ -27,6 +27,14 @@ fi
 checkpt_dir=$SCRATCH/fastssl/checkpoints
 
 python scripts/train_model.py --config-file configs/cc_barlow_twins.yaml --training.lambd=$lambd --training.projector_dim=$pdim --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir --training.batch_size=$batch_size --training.track_alpha=True --training.log_interval=2
+
+# precache features, should take ~35 seconds
+python scripts/train_model.py --config-file configs/cc_precache.yaml --training.lambd=$lambd --training.projector_dim=$pdim --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir --training.batch_size=$batch_size --training.model=resnet50feat
+# precache embeddings, should take ~35 seconds
+python scripts/train_model.py --config-file configs/cc_precache.yaml --training.lambd=$lambd --training.projector_dim=$pdim --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir --training.batch_size=$batch_size --training.model=resnet50proj
+
+# run linear eval on model
+# TODO: make linear eval compatible with precached features
 python scripts/train_model.py --config-file configs/cc_classifier.yaml --training.lambd=$lambd --training.projector_dim=$pdim --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir --training.seed=1
 python scripts/train_model.py --config-file configs/cc_classifier.yaml --training.lambd=$lambd --training.projector_dim=$pdim --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir --training.seed=2
 python scripts/train_model.py --config-file configs/cc_classifier.yaml --training.lambd=$lambd --training.projector_dim=$pdim --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir --training.seed=3
