@@ -84,6 +84,8 @@ Section('training', 'Fast CIFAR-10 training').params(
         bool, 'autocast fp16', default=True),
     track_alpha=Param(
         bool, 'Track evolution of alpha', default=False),
+    precache=Param(
+        bool, 'Precache outputs of network', default=False),
 )
 
 Section('eval', 'Fast CIFAR-10 evaluation').params(
@@ -180,11 +182,11 @@ def gen_ckpt_path(
                             '_no_autocast' if not args.use_autocast else '',
                             args.batch_size,args.lr, args.weight_decay))
         # create ckpt file name
-        ckpt_path = os.path.join(ckpt_dir, '{}_{}_{}{}.{}'.format(
+        ckpt_path = os.path.join(ckpt_dir, '{}{}{}.{}'.format(
             prefix, 
-            args.algorithm, 
-            epoch, 
-            '_seed_{}'.format(args.seed) if 'linear' in args.algorithm else '',
+            '' if 'precache' in prefix else '_{}_{}'.format(args.algorithm,
+                                                           epoch), 
+            '_seed_{}'.format(args.seed),
             suffix))
     # create directory if it doesn't exist
     Path(ckpt_dir).mkdir(parents=True, exist_ok=True)
@@ -227,6 +229,7 @@ def build_model(args=None):
             'ckpt_path': ckpt_path,
             'dataset': training.dataset,
             'feat_dim': training.projector_dim if 'proj' in training.model else 2048,
+            'proj_hidden_dim': training.hidden_dim if eval.train_algorithm in ('byol') else training.projector_dim,
             'num_classes': 10 if training.dataset in ['cifar10','stl10'] else 100, # STL10 evals could be underestimated because if condition changed later (July 4)
         }
         model_cls = linear.LinearClassifier
@@ -372,6 +375,41 @@ def debug_plot(activations_eigen,alpha,ypred,R2,R2_100,figname):
     plt.title(r'$\alpha$={:.3f} R2={:.3f}, R_100={:.3f}'.format(alpha,R2,R2_100))
     plt.savefig(figname)
     plt.close('all')
+
+def precache_outputs(model, loaders, args, eval_args):
+    model.eval()
+    trainset_outputs = []
+    trainset_labels = []
+    train_bar = tqdm(loaders['train'], desc='Train set')
+    for data, target in train_bar:
+        data = data.cuda(non_blocking=True)
+        with autocast():
+            with torch.no_grad():
+                out = model(data)
+        trainset_outputs.append(out.data.cpu().float())
+        trainset_labels.append(target.data.cpu())
+    trainset_outputs = torch.cat(trainset_outputs)
+    trainset_labels = torch.cat(trainset_labels)
+
+    testset_outputs = []
+    testset_labels = []
+    test_bar = tqdm(loaders['test'], desc='Test set')
+    for data, target in test_bar:
+        data = data.cuda(non_blocking=True)
+        with autocast():
+            with torch.no_grad():
+                out = model(data)
+        testset_outputs.append(out.data.cpu().float())
+        testset_labels.append(target.data.cpu())
+    testset_outputs = torch.cat(testset_outputs)
+    testset_labels = torch.cat(testset_labels)
+    output_dict = {
+        'train': {'activations': trainset_outputs.cpu().numpy(),
+                  'labels': trainset_labels.cpu().numpy()},
+        'test': {'activations': testset_outputs.cpu().numpy(),
+                  'labels': testset_labels.cpu().numpy()},
+    }
+    return output_dict
 
 
 def train(model, loaders, optimizer, loss_fn, args, eval_args):
@@ -522,21 +560,38 @@ def run_experiment(args):
     optimizer = build_optimizer(model, training)
     print("CONSTRUCTED OPTIMIZER")
 
-    # get loss function
-    loss_fn = build_loss_fn(training)
-    print("CONSTRUCTED LOSS FUNCTION")
+    if training.precache:
+        print("Precaching model outputs, no training")
+        # removing the final linear readout layer
+        model._modules['fc'] = torch.nn.Identity()
+        results = precache_outputs(model, loaders, training, eval)
+        # now we save the results to npy file!
+        save_path = gen_ckpt_path(training,
+                                eval,
+                                training.epochs,
+                                'precache_{}_{}'.format(training.dataset,
+                                                          training.model), 
+                                'npy')
+        np.save(save_path,results)
 
-    # train the model with default=BT
-    results = train(model, loaders, optimizer, loss_fn, training, eval)
+    else:
+        # get loss function
+        loss_fn = build_loss_fn(training)
+        print("CONSTRUCTED LOSS FUNCTION")
 
-    # save results
-    save_path = gen_ckpt_path(training,
-                            eval,
-                            training.epochs, 
-                            'results_{}_alpha'.format(training.dataset), 'npy')
-    # with open(save_path, 'wb') as f:
-        # pickle.dump(results, f)
-    np.save(save_path,results)
+        # train the model with default=BT
+        results = train(model, loaders, optimizer, loss_fn, training, eval)
+
+        # save results
+        save_path = gen_ckpt_path(training,
+                                eval,
+                                training.epochs, 
+                                'results_{}_alpha'.format(training.dataset), 
+                                'npy')
+        # with open(save_path, 'wb') as f:
+            # pickle.dump(results, f)
+        np.save(save_path,results)
+    return save_path
 
 
 def bt_trainer(config):
@@ -556,8 +611,8 @@ if __name__ == "__main__":
 
     # train model 
     start_time = time.time()
-    run_experiment(args)
+    save_fname = run_experiment(args)
 
     # wrapup experiments with logging key variables
     print(f'Total time: {time.time() - start_time}')
-    print(f'Results saved to {args.training.ckpt_dir}')
+    print(f'Results saved to {save_fname}')
