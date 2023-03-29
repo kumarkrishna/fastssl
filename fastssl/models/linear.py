@@ -28,7 +28,7 @@ class LinearClassifier(nn.Module):
         self.backbone = BackBone(name = self.bkey, 
                                 dataset = self.dataset, 
                                 projector_dim = self.feat_dim,
-                                hidden_dim=proj_hidden_dim)
+                                hidden_dim = proj_hidden_dim)
 
         # load pretrained weights
         self.load_backbone(ckpt_path, requires_grad=False)
