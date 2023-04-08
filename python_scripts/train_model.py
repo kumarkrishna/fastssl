@@ -246,10 +246,10 @@ def build_model(args=None):
             }
         
         if training.algorithm in ('byol'):
-            model_args['hidden_dim'] = training.projector_dim
+            model_args['hidden_dim'] = training.hidden_dim
             model_cls = byol.BYOL
         elif training.algorithm in ('spectralReg'):
-            model_args['hidden_dim'] = training.projector_dim
+            model_args['hidden_dim'] = (training.projector_dim + 2048)//2
             model_cls = spectralreg.SpectralReg
         elif training.algorithm in ('SimCLR'):
             # setting projector dim and hidden dim the same for SimCLR projector
