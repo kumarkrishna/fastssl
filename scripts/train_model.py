@@ -17,7 +17,7 @@ from functools import partial
 from typing import List
 
 import numpy as np
-import os
+import os, glob
 
 from pathlib import Path
 import pickle
@@ -92,7 +92,9 @@ Section('eval', 'Fast CIFAR-10 evaluation').params(
     train_algorithm=Param(
         str, 'pretrain algo', default='ssl'),
     epoch=Param(
-        int, 'epoch', default=24)
+        int, 'epoch', default=24),
+    use_precache=Param(
+        bool, 'Use Precached outputs of network', default=False),
 )
 
 
@@ -104,6 +106,10 @@ def build_dataloaders(
     val_dataset=None,
     batch_size=128,
     num_workers=2):
+    breakpoint()
+    if os.path.splitext(train_dataset)[-1] == '.npy':
+        # using precached features!!
+        pass
     if 'cifar' in dataset:
         if algorithm in ('BarlowTwins', 'SimCLR', 'ssl', 'byol'):
             # return cifar_pt(
@@ -158,7 +164,11 @@ def gen_ckpt_path(
             '_seed_{}'.format(args.seed) if 'linear' in eval_args.train_algorithm else '',
             suffix))
     else:
-        main_dir = args.ckpt_dir
+        if 'precache' in prefix:
+            # save precache features/embeddings in $SLURM_TMPDIR
+            main_dir = os.environ['SLURM_TMPDIR'] 
+        else: 
+            main_dir = args.ckpt_dir
         model_name = args.model
         model_name = model_name.replace('proj','')
         model_name = model_name.replace('feat','')
@@ -224,13 +234,14 @@ def build_model(args=None):
             training,
             eval,
             epoch=args.eval.epoch)
+        breakpoint()
         model_args = {
             'bkey': training.model, # supports : resnet50feat, resnet50proj
             'ckpt_path': ckpt_path,
             'dataset': training.dataset,
             'feat_dim': training.projector_dim if 'proj' in training.model else 2048,
             'proj_hidden_dim': training.hidden_dim if eval.train_algorithm in ('byol') else training.projector_dim,
-            'num_classes': 10 if training.dataset in ['cifar10','stl10'] else 100, # STL10 evals could be underestimated because if condition changed later (July 4)
+            'num_classes': 10 if training.dataset in ['cifar10','stl10'] else 100,
         }
         model_cls = linear.LinearClassifier
 
@@ -284,7 +295,12 @@ def build_optimizer(model, args=None):
 #     plt.imsave('test_imgs/{}2.png'.format(name),img2/255.)
 #     plt.close('all')
 
-def train_step(model, dataloader, args, target_model=None, optimizer=None, loss_fn=None, scaler=None, epoch=None):
+def train_step(model, dataloader, args, 
+               target_model=None, 
+               optimizer=None, 
+               loss_fn=None, 
+               scaler=None, 
+               epoch=None):
     """
     Generic trainer.
 
@@ -303,6 +319,9 @@ def train_step(model, dataloader, args, target_model=None, optimizer=None, loss_
     
     ## set model in train mode
     model.train()
+    if args.algorithm == 'linear':
+        # setting backbone to be eval mode for linear evaluation
+        model.backbone.eval()
 
     # for inp in dataloader:
     for inp in train_bar:
@@ -529,7 +548,38 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args):
                 
     return results
 
-
+def search_precache_file(training,eval):
+    # find the appropriate precached npy file
+    saved_path = gen_ckpt_path(training,
+                            eval,
+                            eval.epoch, #currently not used in the name
+                            'precache_{}_{}'.format(training.dataset,
+                                                    training.model), 
+                            'npy')
+    folder = os.path.dirname(saved_path)
+    candidate_files = glob.glob(os.path.join(folder,'*.npy'))
+    candidate_files = [os.path.basename(f) for f in candidate_files]
+    candidate_files = [f for f in candidate_files if training.dataset in f]
+    candidate_files = [f for f in candidate_files if training.model in f]
+    if len(candidate_files) == 0:
+        print("No precached file found! Running linear eval without precaching!")
+        setattr(eval, 'use_precache', False)
+    else:
+        try:
+            extract_seed_val = lambda x: int(
+                x.split('.npy')[0].split('seed_')[-1]
+                )
+            seed_files = [f for f in candidate_files if training.seed==extract_seed_val(f)]
+            assert len(seed_files)==1
+            fname = seed_files[0]
+            print("Using precache file {}".format(os.path.join(folder,fname)))
+        except:
+            fname = candidate_files[0]
+            print("Could not find the correct seed value ({}), using {}".format(
+                training.seed,os.path.join(folder,fname))
+                )
+        setattr(training, 'train_dataset', os.path.join(folder,fname))
+        setattr(training, 'val_dataset', os.path.join(folder,fname))
 
 def run_experiment(args):
     # import ray
@@ -541,6 +591,7 @@ def run_experiment(args):
     set_seeds(training.seed)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
+    search_precache_file(training,eval)
     ## Use FFCV to build dataloaders 
     loaders = build_dataloaders(
         training.dataset,
