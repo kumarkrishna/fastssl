@@ -597,7 +597,8 @@ def run_experiment(args):
     set_seeds(training.seed)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-    search_precache_file(training,eval)
+    if eval.use_precache:
+        search_precache_file(training,eval)
     ## Use FFCV to build dataloaders 
     loaders = build_dataloaders(
         training.dataset,
