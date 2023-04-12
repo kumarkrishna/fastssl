@@ -24,7 +24,7 @@ class LinearClassifier(nn.Module):
         self.feat_dim = feat_dim
         self.proj_hidden_dim = proj_hidden_dim
 
-        if self.bkey is not None:
+        if len(self.bkey) > 0:
             # define model : backbone(resnet50modified) 
             self.backbone = BackBone(name = self.bkey, 
                                     dataset = self.dataset, 
@@ -63,6 +63,9 @@ class LinearClassifier(nn.Module):
             x = torch.flatten(x, start_dim=1)
             feats = self.backbone.proj(x)
         elif 'feat' in self.bkey:
+            feats = self.backbone(x)
+        elif len(self.bkey)==0:
+            # no backbone, i.e. Identity case
             feats = self.backbone(x)
         feats = torch.flatten(feats, start_dim=1)
         preds = self.fc(feats)
