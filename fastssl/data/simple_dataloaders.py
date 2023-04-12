@@ -15,11 +15,13 @@ class SimpleDataset(Dataset):
     def __getitem__(self,idx):
         return self.X[idx], self.y[idx]
     
-def SimpleDataloader(fname,
+def SimpleDataloader(fname_train,
+                     fname_test,
                      splits=['train','test'],
                      batch_size=512,
                      num_workers=2):
-    data_from_file = np.load(fname,allow_pickle=True).item()
+    assert fname_train==fname_test, "Precaching train/test features should be stored in the same file!"
+    data_from_file = np.load(fname_train,allow_pickle=True).item()
     loaders = {}
     for split in splits:
         dataset = SimpleDataset(data_labels_dict=data_from_file[split])
