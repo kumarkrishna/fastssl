@@ -24,14 +24,18 @@ class LinearClassifier(nn.Module):
         self.feat_dim = feat_dim
         self.proj_hidden_dim = proj_hidden_dim
 
-        # define model : backbone(resnet50modified) 
-        self.backbone = BackBone(name = self.bkey, 
-                                dataset = self.dataset, 
-                                projector_dim = self.feat_dim,
-                                hidden_dim = proj_hidden_dim)
+        if self.bkey is not None:
+            # define model : backbone(resnet50modified) 
+            self.backbone = BackBone(name = self.bkey, 
+                                    dataset = self.dataset, 
+                                    projector_dim = self.feat_dim,
+                                    hidden_dim = proj_hidden_dim)
 
-        # load pretrained weights
-        self.load_backbone(ckpt_path, requires_grad=False)
+            # load pretrained weights
+            self.load_backbone(ckpt_path, requires_grad=False)
+        else:
+            # not using any backbone
+            self.backbone = nn.Identity()
 
         # define linear classifier
         self.fc = nn.Linear(feat_dim, num_classes, bias=True)
