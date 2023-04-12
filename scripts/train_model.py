@@ -34,7 +34,7 @@ from tqdm import tqdm
 
 from fastargs import Section, Param
 
-from fastssl.data import cifar_ffcv, cifar_classifier_ffcv, cifar_pt, stl_ffcv, stl10_pt, stl_classifier_ffcv
+from fastssl.data import cifar_ffcv, cifar_classifier_ffcv, cifar_pt, stl_ffcv, stl10_pt, stl_classifier_ffcv, SimpleDataloader
 from fastssl.models import barlow_twins as bt
 from fastssl.models import linear, byol, simclr
 
@@ -106,10 +106,13 @@ def build_dataloaders(
     val_dataset=None,
     batch_size=128,
     num_workers=2):
-    breakpoint()
     if os.path.splitext(train_dataset)[-1] == '.npy':
         # using precached features!!
-        pass
+        print("Using simple dataloader")
+        return SimpleDataloader(train_dataset,
+                                val_dataset,
+                                batch_size=batch_size,
+                                num_workers=num_workers)
     if 'cifar' in dataset:
         if algorithm in ('BarlowTwins', 'SimCLR', 'ssl', 'byol'):
             # return cifar_pt(
@@ -234,9 +237,12 @@ def build_model(args=None):
             training,
             eval,
             epoch=args.eval.epoch)
-        breakpoint()
+        if eval.use_precache:
+            model_type = ''
+        else:
+            model_type = training.model # supports : resnet50feat, resnet50proj
         model_args = {
-            'bkey': training.model, # supports : resnet50feat, resnet50proj
+            'bkey': model_type,
             'ckpt_path': ckpt_path,
             'dataset': training.dataset,
             'feat_dim': training.projector_dim if 'proj' in training.model else 2048,
