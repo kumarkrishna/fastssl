@@ -36,6 +36,7 @@ python scripts/train_model.py --config-file configs/cc_precache.yaml --training.
 
 # run linear eval on precached features from model: using default seed 42
 python scripts/train_model.py --config-file configs/cc_classifier.yaml --training.lambd=$lambd --training.projector_dim=$pdim --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir --training.seed=42
+
 # dataset='stl10'
 
 cp $SLURM_TMPDIR/*.pth $checkpt_dir/resnet50_checkpoints/
