@@ -176,7 +176,7 @@ for fidx,file in enumerate(tqdm(files_sorted)):
 				'batchSize': bsz_val,
 				'pdim': pdim_val
 			}
-			hparam_filter_condition = temp_val
+			hparam_filter_condition = bsz_val
 		else:
 			lamda_val = float(os.path.basename(file).split('lambd_')[-1].split('_')[0])
 			pdim_val = float(os.path.basename(file).split('pdim_')[-1].split('_')[0])
