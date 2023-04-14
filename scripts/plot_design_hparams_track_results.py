@@ -25,14 +25,18 @@ parser.add_argument('--ssl_alg', type=str,
 		    default='barlowtwins')
 parser.add_argument('--dataset_ssl', type=str,
 		    default='cifar10')
+parser.add_argument('--hparam_filter_val', type=float, 
+		    default=-1)
+parser.add_argument('--verbose', action='store_true') 
 args = parser.parse_args()
 
 flag_debug = args.flag_debug  # False
 use_old_alpha = args.use_old_alpha  # True
+verbose = args.verbose  # False
 R2_thresh = args.R2_thresh  # 0.95
-
 ssl_alg = args.ssl_alg  # 'simclr'
 assert ssl_alg in ['barlowtwins','simclr'], "Unrecognized ssl algorithm ({})".format(ssl_alg)
+hparam_filter_val = args.hparam_filter_val
 model_arch = 'resnet50'
 dataset_ssl = args.dataset_ssl  # 'cifar10'
 assert dataset_ssl in ['cifar10','stl10'], "Unrecognized ssl dataset ({})".format(dataset_ssl)
@@ -159,6 +163,8 @@ files_sorted = [track_alpha_files[idx] for idx in sorting_order]
 
 res_all_files = []
 alpha_correction_due_to_minibatches = 0.0 #0.1
+min_accuracy = 100
+max_accuracy = -100
 for fidx,file in enumerate(tqdm(files_sorted)):
 	try:
 		if ssl_alg == 'simclr':
@@ -170,6 +176,7 @@ for fidx,file in enumerate(tqdm(files_sorted)):
 				'batchSize': bsz_val,
 				'pdim': pdim_val
 			}
+			hparam_filter_condition = temp_val
 		else:
 			lamda_val = float(os.path.basename(file).split('lambd_')[-1].split('_')[0])
 			pdim_val = float(os.path.basename(file).split('pdim_')[-1].split('_')[0])
@@ -177,6 +184,7 @@ for fidx,file in enumerate(tqdm(files_sorted)):
 				'lamda': lamda_val,
 				'pdim': pdim_val
 			}
+			hparam_filter_condition = pdim_val
 		SSL_fname = os.path.join(file,'results_{}_alpha_{}_100.npy'.format(
 			dataset_ssl,
 			'SimCLR' if ssl_alg=='simclr' else 'ssl'))
@@ -247,7 +255,21 @@ for fidx,file in enumerate(tqdm(files_sorted)):
 		accuracy_arr = np.array(accuracy_arr)
 		# if np.mean(accuracy_arr) < 60:
 		# 	continue
+		if np.mean(accuracy_arr) > max_accuracy:
+			max_accuracy = np.mean(accuracy_arr)
+		if np.mean(accuracy_arr) < min_accuracy:
+			min_accuracy = np.mean(accuracy_arr)
+		
+		if hparam_filter_val>0:
+			if hparam_filter_condition!=hparam_filter_val: 
+				continue
 		res_all_files.append((epoch_alpha_dict,np.mean(accuracy_arr)))
+		if verbose:
+			tqdm.write("lamda = {}, alpha = {}, accuracy = {}".format(
+				lamda_val,
+				list(epoch_alpha_dict.values())[-1],
+				np.mean(accuracy_arr)
+			))
 		if flag_debug: 
 			plot_alpha_fit(
 				linear_dict,
@@ -266,8 +288,6 @@ cscale = cm.get_cmap('coolwarm', N_colors)
 
 all_fin_accuracy_vals = [res[1] for res in res_all_files]
 all_fin_alpha_vals = [res[0][100] for res in res_all_files]
-min_accuracy = min(all_fin_accuracy_vals)
-max_accuracy = max(all_fin_accuracy_vals)
 
 plt.figure(r'Scatter plot: $\alpha$ vs accuracy')
 plt.ylabel('Accuracy')
@@ -291,9 +311,27 @@ for epoch_alpha, final_accuracy in res_all_files:
 			alpha=final_accuracy/100,
 			# alpha=1-final_accuracy/100
 			)
+	plt.figure(r'Change in $\alpha$ across SSL pretraining')
+	epoch_alpha_list = list(epoch_alpha.keys())
+	epoch_alpha_vals = list(epoch_alpha.values())
+	del_alpha_vals = np.diff(epoch_alpha_vals)
+	plt.plot(epoch_alpha_list[1:],
+			np.abs(del_alpha_vals),
+			c=cscale(color_idx),
+			marker='o',lw=1,
+			alpha=final_accuracy/100,
+			# alpha=1-final_accuracy/100
+			)
 plt.figure(r'Evolution of $\alpha$ across SSL pretraining')
+if hparam_filter_val > 0:
+	plt.title('{} = {}'.format(
+		'pdim' if ssl_alg=='barlowtwins' else 'temp',
+		hparam_filter_val))
 plt.grid('on')
-print(min_accuracy,max_accuracy)
+if verbose:
+	print("min accuracy: {:3f}, max accuracy: {:.3f}".format(
+		min_accuracy,max_accuracy
+		))
 norm = mpl.colors.Normalize(vmin=0,vmax=2)
 sm = cm.ScalarMappable(cmap=cscale, norm=norm)
 sm.set_array([])
@@ -304,5 +342,25 @@ cbar.ax.set_yticklabels(
 	['{:.2f}'.format(i) for i in np.linspace(min_acc_cbar,max_accuracy,10)]
 	)
 plt.ylabel(r'$\alpha$')
+plt.ylim([0.7,3.5])
 plt.xlabel('SSL pretraining Epochs')
+
+plt.figure(r'Change in $\alpha$ across SSL pretraining')
+if hparam_filter_val > 0:
+	plt.title('{} = {}'.format(
+		'pdim' if ssl_alg=='barlowtwins' else 'temp',
+		hparam_filter_val))
+plt.grid('on')
+norm = mpl.colors.Normalize(vmin=0,vmax=2)
+sm = cm.ScalarMappable(cmap=cscale, norm=norm)
+sm.set_array([])
+cbar = plt.colorbar(sm,
+					ticks=np.linspace(0,2,10), 
+					boundaries=np.arange(-0.05,2.1,.1))
+cbar.ax.set_yticklabels(
+	['{:.2f}'.format(i) for i in np.linspace(min_acc_cbar,max_accuracy,10)]
+	)
+plt.ylabel(r'$\Delta\alpha$')
+plt.xlabel('SSL pretraining Epochs')
+plt.yscale('log')
 plt.show()
