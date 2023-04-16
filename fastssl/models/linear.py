@@ -64,16 +64,5 @@ class LinearClassifier(nn.Module):
             x = torch.flatten(x, start_dim=1)
             x = self.backbone.proj(x)
         feats = torch.flatten(x, start_dim=1)
-
-        # if 'proj' in self.bkey:
-        #     x = self.backbone(x)
-        #     x = torch.flatten(x, start_dim=1)
-        #     feats = self.backbone.proj(x)
-        # elif 'feat' in self.bkey:
-        #     feats = self.backbone(x)
-        # elif len(self.bkey)==0:
-        #     # no backbone, i.e. Identity case
-        #     feats = self.backbone(x)
-        # feats = torch.flatten(feats, start_dim=1)
         preds = self.fc(feats)
         return preds
