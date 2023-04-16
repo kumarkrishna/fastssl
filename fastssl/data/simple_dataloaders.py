@@ -4,18 +4,18 @@ from torch.utils.data import Dataset, DataLoader
 class SimpleDataset(Dataset):
     def __init__(self,
                  data_labels_dict,
-                 X_key='activations',
+                 x_key='activations',
                  y_key='labels'):
-        self.X = data_labels_dict[X_key]
+        self.x = data_labels_dict[x_key]
         self.y = data_labels_dict[y_key]
 
     def __len__(self):
-        return len(self.X)
+        return len(self.x)
 
     def __getitem__(self,idx):
-        return self.X[idx], self.y[idx]
+        return self.x[idx], self.y[idx]
     
-def SimpleDataloader(fname_train,
+def simple_dataloader(fname_train,
                      fname_test,
                      splits=['train','test'],
                      batch_size=512,
