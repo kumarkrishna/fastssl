@@ -28,7 +28,7 @@ def simple_dataloader(fname_train,
         loaders[split] = DataLoader(
             dataset, 
             batch_size=batch_size,
-            shuffle=True,
+            shuffle=True if split=='train' else False,
             num_workers=num_workers
         )
 
