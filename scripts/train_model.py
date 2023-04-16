@@ -34,7 +34,7 @@ from tqdm import tqdm
 
 from fastargs import Section, Param
 
-from fastssl.data import cifar_ffcv, cifar_classifier_ffcv, cifar_pt, stl_ffcv, stl10_pt, stl_classifier_ffcv, SimpleDataloader
+from fastssl.data import cifar_ffcv, cifar_classifier_ffcv, cifar_pt, stl_ffcv, stl10_pt, stl_classifier_ffcv, simple_dataloader
 from fastssl.models import barlow_twins as bt
 from fastssl.models import linear, byol, simclr
 
