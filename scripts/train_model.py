@@ -646,8 +646,6 @@ def run_experiment(args):
                                 training.epochs, 
                                 'results_{}_alpha'.format(training.dataset), 
                                 'npy')
-        # with open(save_path, 'wb') as f:
-            # pickle.dump(results, f)
         np.save(save_path,results)
     return save_path
 
