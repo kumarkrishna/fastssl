@@ -109,7 +109,7 @@ def build_dataloaders(
     if os.path.splitext(train_dataset)[-1] == '.npy':
         # using precached features!!
         print("Using simple dataloader")
-        return SimpleDataloader(train_dataset,
+        return simple_dataloader(train_dataset,
                                 val_dataset,
                                 batch_size=batch_size,
                                 num_workers=num_workers)
