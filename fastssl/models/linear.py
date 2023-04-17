@@ -15,20 +15,27 @@ class LinearClassifier(nn.Module):
                  bkey="resnet50feat",
                  ckpt_path=None, 
                  ckpt_epoch=None,
-                 feat_dim=2048):
+                 feat_dim=2048,
+                 proj_hidden_dim=128):
         super(LinearClassifier, self).__init__()
         # set arguments
         self.bkey = bkey
         self.dataset = dataset
         self.feat_dim = feat_dim
+        self.proj_hidden_dim = proj_hidden_dim
 
-        # define model : backbone(resnet50modified) 
-        self.backbone = BackBone(name = self.bkey, 
-                                dataset = self.dataset, 
-                                projector_dim = self.feat_dim)
+        if len(self.bkey) > 0:
+            # define model : backbone(resnet50modified) 
+            self.backbone = BackBone(name = self.bkey, 
+                                    dataset = self.dataset, 
+                                    projector_dim = self.feat_dim,
+                                    hidden_dim = proj_hidden_dim)
 
-        # load pretrained weights
-        self.load_backbone(ckpt_path, requires_grad=False)
+            # load pretrained weights
+            self.load_backbone(ckpt_path, requires_grad=False)
+        else:
+            # not using any backbone
+            self.backbone = nn.Identity()
 
         # define linear classifier
         self.fc = nn.Linear(feat_dim, num_classes, bias=True)
@@ -51,12 +58,11 @@ class LinearClassifier(nn.Module):
         
 
     def forward(self, x):
-        if 'proj' in self.bkey:
+        if self.backbone is not None:
             x = self.backbone(x)
+        if 'proj' in self.bkey:
             x = torch.flatten(x, start_dim=1)
-            feats = self.backbone.proj(x)
-        elif 'feat' in self.bkey:
-            feats = self.backbone(x)
-        feats = torch.flatten(feats, start_dim=1)
+            x = self.backbone.proj(x)
+        feats = torch.flatten(x, start_dim=1)
         preds = self.fc(feats)
         return preds
