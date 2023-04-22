@@ -190,76 +190,86 @@ for fidx,file in enumerate(tqdm(files_sorted)):
 				'pdim': pdim_val
 			}
 			hparam_filter_condition = pdim_val
-		SSL_fname = os.path.join(file,'results_{}_alpha_{}_100*.npy'.format(
+		SSL_fnames = os.path.join(file,'results_{}_alpha_{}_100*.npy'.format(
 			dataset_ssl,
 			'SimCLR' if ssl_alg=='simclr' else 'ssl'))
-		SSL_files = glob.glob(SSL_fname)
-		SSL_fname = SSL_files[0]
+		SSL_files = glob.glob(SSL_fnames)
 		epoch_alpha_dict = {}
-		epoch_lamda_dict = {0:lamda_val}
-		if os.path.exists(SSL_fname): 
-			SSL_file = np.load(SSL_fname,allow_pickle=True).item()
-			# breakpoint()
-			eigenspectrum_series = SSL_file['eigenspectrum']
-			R2_100_series = SSL_file['R2_100']
-			alpha_series = SSL_file['alpha']
-			if 'lambda' in SSL_file.keys(): 
-				lamda_series = SSL_file['lambda']
-			else: 
-				lamda_series = None
-			for idx, (epoch, eigen) in enumerate(eigenspectrum_series):
-				assert epoch==R2_100_series[idx][0], "Epochs for R2 series don't match {} vs {}".format(epoch,R2_100_series[idx][0])
-				# if (not use_old_alpha and R2_100_series[idx][1]<R2_thresh):
-				if not use_old_alpha:
-					# range_init = 5
-					# range_init = 3
-					range_init = 11
-					range_end = 50
-					# range_end = 30
-					alpha,ypred,R2,r2_range = stringer_get_powerlaw(
-						eigen,np.arange(range_init,range_end))
-					while r2_range<R2_thresh:
-						range_end = int(range_end//2)
-						if range_end <= range_init:
-							print(
-								"No good powerlaw fit for hyperparams:",
-								hyperparam_vals, 
-								"epoch = {}".format(epoch)
-								)
-							r2_range = None
-							break
+		epoch_lamda_dict = {}
+		for SSL_fname in SSL_files:
+			# SSL_fname = SSL_files[0]
+			if os.path.exists(SSL_fname): 
+				# add init lamda_val in epoch_lamda_dict
+				if 0 not in epoch_lamda_dict.keys():
+					epoch_lamda_dict[0] = [lamda_val]
+				else:
+					epoch_lamda_dict[0].append(lamda_val)
+				SSL_file = np.load(SSL_fname,allow_pickle=True).item()
+				# breakpoint()
+				eigenspectrum_series = SSL_file['eigenspectrum']
+				R2_100_series = SSL_file['R2_100']
+				alpha_series = SSL_file['alpha']
+				if 'lambda' in SSL_file.keys(): 
+					lamda_series = SSL_file['lambda']
+				else: 
+					lamda_series = None
+				for idx, (epoch, eigen) in enumerate(eigenspectrum_series):
+					assert epoch==R2_100_series[idx][0], "Epochs for R2 series don't match {} vs {}".format(epoch,R2_100_series[idx][0])
+					# if (not use_old_alpha and R2_100_series[idx][1]<R2_thresh):
+					if not use_old_alpha:
+						# range_init = 5
+						# range_init = 3
+						range_init = 11
+						range_end = 50
+						# range_end = 30
 						alpha,ypred,R2,r2_range = stringer_get_powerlaw(
 							eigen,np.arange(range_init,range_end))
-					if r2_range:					
-						R2_100 = r2_range
+						while r2_range<R2_thresh:
+							range_end = int(range_end//2)
+							if range_end <= range_init:
+								print(
+									"No good powerlaw fit for hyperparams:",
+									hyperparam_vals, 
+									"epoch = {}".format(epoch)
+									)
+								r2_range = None
+								break
+							alpha,ypred,R2,r2_range = stringer_get_powerlaw(
+								eigen,np.arange(range_init,range_end))
+						if r2_range:					
+							R2_100 = r2_range
+						else:
+							# no powerlaw fit
+							continue
 					else:
-						# no powerlaw fit
-						continue
-				else:
-					assert epoch==alpha_series[idx][0], (
-						"Epochs for alpha series don't match {} vs {}".format(
-							epoch,
-							alpha_series[idx][0])
-					)
-					alpha = alpha_series[idx][1]
-				epoch_alpha_dict[epoch] = alpha
-				if epoch>0 and lamda_series is not None: 
-					epoch_lamda_dict[epoch] = lamda_series[idx-1][1]
-				if flag_debug:
-					plot_alpha_fit(
-                        {'eigenspectrum': eigenspectrum_series[idx][1]},
-                        trange = np.arange(11,50),
-                        hyperparam_dict=hyperparam_vals,
-                        epoch_val=epoch
-			        )
+						assert epoch==alpha_series[idx][0], (
+							"Epochs for alpha series don't match {} vs {}".format(
+								epoch,
+								alpha_series[idx][0])
+						)
+						alpha = alpha_series[idx][1]
+					if epoch not in epoch_alpha_dict.keys():
+						epoch_alpha_dict[epoch] = [alpha]
+					else:
+						epoch_alpha_dict[epoch].append(alpha)
+					if epoch>0 and lamda_series is not None: 
+						if epoch not in epoch_lamda_dict.keys():
+							epoch_lamda_dict[epoch] = [lamda_series[idx-1][1]]
+						else:
+							epoch_lamda_dict[epoch].append(lamda_series[idx-1][1])
+					if flag_debug:
+						plot_alpha_fit(
+                        	{'eigenspectrum': eigenspectrum_series[idx][1]},
+                        	trange = np.arange(11,50),
+                        	hyperparam_dict=hyperparam_vals,
+                        	epoch_val=epoch
+			        	)
 
-		else:
-			continue
+			else:
+				continue
 		linear_files = glob.glob(os.path.join(
 			file,'results_{}_alpha_linear_200*'.format(dataset_ssl)
 			))
-		# if len(linear_files) < 3: 
-		# 	continue
 		accuracy_arr = []
 		for linear_fname in linear_files:
 			linear_dict = np.load(linear_fname,allow_pickle=True).item()
@@ -279,11 +289,11 @@ for fidx,file in enumerate(tqdm(files_sorted)):
 				continue
 		res_all_files.append((epoch_alpha_dict,
                               epoch_lamda_dict,
-                              np.mean(accuracy_arr)))
+                              accuracy_arr))
 		if verbose:
 			tqdm.write("lamda = {}, alpha = {}, accuracy = {}".format(
 				lamda_val,
-				list(epoch_alpha_dict.values())[-1],
+				np.mean(list(epoch_alpha_dict.values())[-1]),
 				np.mean(accuracy_arr)
 			))
 		if flag_debug: 
@@ -321,44 +331,69 @@ plt.ylim([min_acc_cbar,max_accuracy+2])
 
 accuracy_range = max_accuracy - min_acc_cbar
 for epoch_alpha, epoch_lamda, final_accuracy in res_all_files:
-    color_idx = int(np.round(N_colors*(final_accuracy-min_acc_cbar)/accuracy_range))
-    plt.figure(r'Scatter plot: $\alpha$ vs accuracy')
-    plt.scatter(epoch_alpha[100],final_accuracy,color=cscale(color_idx))
-    # plt.scatter(all_fin_alpha_vals,all_fin_accuracy_vals)
+	color_idx = int(np.round(N_colors*(np.mean(final_accuracy)-min_acc_cbar)/accuracy_range))
+	plt.figure(r'Scatter plot: $\alpha$ vs accuracy')
+	plt.scatter(epoch_alpha[100],final_accuracy,color=cscale(color_idx))
 
-    plt.figure(r'Scatter plot: $\lambda$ vs accuracy')
-    plt.scatter(epoch_lamda[0],final_accuracy,color=cscale(color_idx))
+	plt.figure(r'Scatter plot: $\lambda$ vs accuracy')
+	if len(final_accuracy) == 1:
+		plt.scatter(epoch_lamda[0],final_accuracy[0],color=cscale(color_idx))
+	else:
+		plt.errorbar(x=np.mean(epoch_lamda[0]),y=np.mean(final_accuracy),
+	       xerr=np.std(epoch_lamda[0]),yerr=np.std(final_accuracy),
+	       color=cscale(color_idx),marker='o'
+	       )
 
-    plt.figure(r'Evolution of $\alpha$ across SSL pretraining')
-    plt.plot(list(epoch_alpha.keys()),
-            list(epoch_alpha.values()),
-            c=cscale(color_idx),
-            marker='o',lw=1,
-            alpha=final_accuracy/100,
-            # alpha=1-final_accuracy/100
-            )
-    if len(epoch_lamda.keys()) > 1:
-        plt.figure(r'Evolution of $\lambda$ across SSL pretraining')
-        plt.plot(list(epoch_lamda.keys()),
-		        list(epoch_lamda.values()),
-		        c=cscale(color_idx),
-		        marker='o',lw=1,
-		        alpha=final_accuracy/100,
-		        # alpha=1-final_accuracy/100
-                )
-        plt.yscale('log')
-        
-    plt.figure(r'Change in $\alpha$ across SSL pretraining')
-    epoch_alpha_list = list(epoch_alpha.keys())
-    epoch_alpha_vals = list(epoch_alpha.values())
-    del_alpha_vals = np.diff(epoch_alpha_vals)
-    plt.plot(epoch_alpha_list[1:],
-            np.abs(del_alpha_vals),
-            c=cscale(color_idx),
-            marker='o',lw=1,
-            alpha=final_accuracy/100,
-            # alpha=1-final_accuracy/100
-            )
+	plt.figure(r'Evolution of $\alpha$ across SSL pretraining')
+	if len(list(epoch_alpha.values())[0]) == 1:
+		plt.plot(list(epoch_alpha.keys()),
+				[np.mean(a) for a in list(epoch_alpha.values())],
+				c=cscale(color_idx),
+				marker='o',lw=1,
+				alpha=np.mean(final_accuracy)/100,
+				# alpha=1-np.mean(final_accuracy)/100
+				)
+	else:
+		plt.errorbar(x=list(epoch_alpha.keys()),
+					y=[np.mean(a) for a in list(epoch_alpha.values())],
+					yerr=[np.std(a) for a in list(epoch_alpha.values())],
+					c=cscale(color_idx),
+					marker='o',lw=1,
+					alpha=np.mean(final_accuracy)/100,
+					# alpha=1-np.mean(final_accuracy)/100
+				)
+	if len(epoch_lamda.keys()) > 1:
+		plt.figure(r'Evolution of $\lambda$ across SSL pretraining')
+		if len(list(epoch_lamda.values())[0]) == 1:
+			plt.plot(list(epoch_lamda.keys()),
+					[np.mean(l) for l in list(epoch_lamda.values())],
+					c=cscale(color_idx),
+					marker='o',lw=1,
+					alpha=np.mean(final_accuracy)/100,
+					# alpha=1-np.mean(final_accuracy)/100
+					)
+		else:
+			plt.errorbar(x=list(epoch_lamda.keys()),
+					y=[np.mean(l) for l in list(epoch_lamda.values())],
+					yerr=[np.std(l) for l in list(epoch_lamda.values())],
+					c=cscale(color_idx),
+					marker='o',lw=1,
+					alpha=np.mean(final_accuracy)/100,
+					# alpha=1-np.mean(final_accuracy)/100
+				)
+		plt.yscale('log')
+		
+	# plt.figure(r'Change in $\alpha$ across SSL pretraining')
+	# epoch_alpha_list = list(epoch_alpha.keys())
+	# epoch_alpha_vals = list(epoch_alpha.values())
+	# del_alpha_vals = np.diff(epoch_alpha_vals)
+	# plt.plot(epoch_alpha_list[1:],
+	# 		np.abs(del_alpha_vals),
+	# 		c=cscale(color_idx),
+	# 		marker='o',lw=1,
+	# 		alpha=np.mean(final_accuracy)/100,
+	# 		# alpha=1-final_accuracy/100
+	# 		)
 plt.figure(r'Evolution of $\alpha$ across SSL pretraining')
 if hparam_filter_val > 0:
 	plt.title('{} = {}'.format(
@@ -382,22 +417,23 @@ plt.ylabel(r'$\alpha$')
 plt.ylim([0.7,3.5])
 plt.xlabel('SSL pretraining Epochs')
 
-plt.figure(r'Change in $\alpha$ across SSL pretraining')
-if hparam_filter_val > 0:
-	plt.title('{} = {}'.format(
-		'pdim' if ssl_alg=='barlowtwins' else 'temp',
-		hparam_filter_val))
-plt.grid('on')
-norm = mpl.colors.Normalize(vmin=0,vmax=2)
-sm = cm.ScalarMappable(cmap=cscale, norm=norm)
-sm.set_array([])
-cbar = plt.colorbar(sm,
-					ticks=np.linspace(0,2,10), 
-					boundaries=np.arange(-0.05,2.1,.1))
-cbar.ax.set_yticklabels(
-	['{:.2f}'.format(i) for i in np.linspace(min_acc_cbar,max_accuracy,10)]
-	)
-plt.ylabel(r'$\Delta\alpha$')
-plt.xlabel('SSL pretraining Epochs')
-plt.yscale('log')
+# plt.figure(r'Change in $\alpha$ across SSL pretraining')
+# if hparam_filter_val > 0:
+# 	plt.title('{} = {}'.format(
+# 		'pdim' if ssl_alg=='barlowtwins' else 'temp',
+# 		hparam_filter_val))
+# plt.grid('on')
+# norm = mpl.colors.Normalize(vmin=0,vmax=2)
+# sm = cm.ScalarMappable(cmap=cscale, norm=norm)
+# sm.set_array([])
+# cbar = plt.colorbar(sm,
+# 					ticks=np.linspace(0,2,10), 
+# 					boundaries=np.arange(-0.05,2.1,.1))
+# cbar.ax.set_yticklabels(
+# 	['{:.2f}'.format(i) for i in np.linspace(min_acc_cbar,max_accuracy,10)]
+# 	)
+# plt.ylabel(r'$\Delta\alpha$')
+# plt.xlabel('SSL pretraining Epochs')
+# plt.yscale('log')
+
 plt.show()
