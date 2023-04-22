@@ -35,6 +35,8 @@ def SpectralRegLoss(model, inp, hypersphere_radius=0.3, spectral_loss_weight=Non
     z2_norm = (z2 - z2.mean(0)) / z2.std(0) # NxD
 
     if version == '1':       
+        # invariance term: MSE between z1_norm and z2_norm
+        # collapse term: Compute eigenvals of z1_norm only and push them to be greater than some radius
         z2_norm = z2_norm.detach()
 
         variance = torch.mm(z1_norm.T, z1_norm) / bsz # DxD
@@ -47,6 +49,8 @@ def SpectralRegLoss(model, inp, hypersphere_radius=0.3, spectral_loss_weight=Non
         invariance_loss = torch.mean((z1_norm - z2_norm) ** 2)
 
     elif version == '2':
+        # invariance term: MSE between z1_norm and z2_norm
+        # collapse term: Compute eigenvals of both z1_norm & z2_norm and push them to be greater than some radius
         variance_z1 = torch.mm(z1_norm.T, z1_norm) / bsz # DxD
         eigenvals_z1 = torch.linalg.eigvals(variance_z1.to(torch.float32)).real
 
@@ -64,6 +68,8 @@ def SpectralRegLoss(model, inp, hypersphere_radius=0.3, spectral_loss_weight=Non
         invariance_loss = torch.mean((z1_norm - z2_norm) ** 2)
 
     elif version == '3':
+        # invariance term: Similar to BYOL using z1_norm and z2_norm
+        # collapse term: Compute eigenvals of z1_norm only and push them to be greater than some radius
         z2_norm = z2_norm.detach()
 
         variance = torch.mm(z1_norm.T, z1_norm) / bsz # DxD
@@ -76,6 +82,8 @@ def SpectralRegLoss(model, inp, hypersphere_radius=0.3, spectral_loss_weight=Non
         invariance_loss = ((1 - (z1_norm * z2_norm).sum(dim=-1))**2).mean()
 
     elif version == '4':
+        # invariance term: Similar to BYOL using z1_norm and z2_norm, but normalizing embeddings to be norm 1
+        # collapse term: Compute eigenvals of z1_norm only and push them to be greater than some radius
         z2_norm = z2_norm.detach()
 
         variance = torch.mm(z1_norm.T, z1_norm) / bsz # DxD
@@ -88,6 +96,8 @@ def SpectralRegLoss(model, inp, hypersphere_radius=0.3, spectral_loss_weight=Non
         invariance_loss = (2 - 2 * (F.normalize(z1_norm, dim=-1, p=2) * F.normalize(z2_norm, dim=-1, p=2)).sum(dim=-1)).mean()
 
     elif version == '5':
+        # invariance term: Similar to BYOL using z1_norm and z2_norm, but normalizing embeddings to be norm 1
+        # collapse term: Compute eigenvals of both z1_norm & z2_norm and push them to be greater than some radius
         variance_z1 = torch.mm(z1_norm.T, z1_norm) / bsz # DxD
         eigenvals_z1 = torch.linalg.eigvals(variance_z1.to(torch.float32)).real
 
