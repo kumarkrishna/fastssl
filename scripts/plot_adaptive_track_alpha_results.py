@@ -216,7 +216,10 @@ for fidx,file in enumerate(tqdm(files_sorted)):
 				for idx, (epoch, eigen) in enumerate(eigenspectrum_series):
 					assert epoch==R2_100_series[idx][0], "Epochs for R2 series don't match {} vs {}".format(epoch,R2_100_series[idx][0])
 					# if (not use_old_alpha and R2_100_series[idx][1]<R2_thresh):
-					if not use_old_alpha:
+					try:
+						# try to compute new alpha
+						# unless explicitly told not to :)
+						assert not use_old_alpha
 						# range_init = 5
 						# range_init = 3
 						range_init = 11
@@ -241,7 +244,7 @@ for fidx,file in enumerate(tqdm(files_sorted)):
 						else:
 							# no powerlaw fit
 							continue
-					else:
+					except:
 						assert epoch==alpha_series[idx][0], (
 							"Epochs for alpha series don't match {} vs {}".format(
 								epoch,
