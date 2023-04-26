@@ -100,8 +100,8 @@ def gen_image_label_pipeline(
         image_pipeline = gen_image_pipeline(
             device=device, transform_cls=transform_cls, rescale=rescale)
 
-        # ordering = OrderOption.RANDOM if split == 'train' else OrderOption.SEQUENTIAL
-        ordering = OrderOption.RANDOM #if split == 'train' else OrderOption.SEQUENTIAL
+        ordering = OrderOption.RANDOM if split == 'train' else OrderOption.SEQUENTIAL
+        # ordering = OrderOption.RANDOM #if split == 'train' else OrderOption.SEQUENTIAL
 
         loaders[split] = Loader(
             datadir[split],
@@ -165,7 +165,7 @@ def gen_image_label_pipeline_ffcv_test(
         image_pipeline = gen_image_pipeline(
             device=device, transform_cls=STLClassifierTransform, rescale=rescale)
         
-        ordering = OrderOption.RANDOM
+        ordering = OrderOption.SEQUENTIAL
 
         loaders[split] = Loader(
             datadir[split],

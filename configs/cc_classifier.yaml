@@ -18,3 +18,4 @@ training:
 eval:
   train_algorithm: 'ssl'
   epoch: 100
+  use_precache: True

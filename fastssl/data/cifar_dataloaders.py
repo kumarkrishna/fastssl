@@ -252,7 +252,9 @@ def gen_image_label_pipeline_ffcv_test(
             device=device, transform_cls=CifarClassifierTransform, rescale=rescale
         )
 
-        ordering = OrderOption.RANDOM  # if split == 'train' else OrderOption.SEQUENTIAL
+        ordering = (
+            OrderOption.SEQUENTIAL
+        )  # if split == 'train' else OrderOption.SEQUENTIAL
 
         loaders[split] = Loader(
             datadir[split],

@@ -1,9 +1,19 @@
 from argparse import ArgumentParser
+import random, os
 import torch
 import numpy as np
 import os
 
 from fastargs import get_current_config
+
+
+def set_seeds(seed, use_deterministic=False):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if use_deterministic:
+        os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
+        torch.use_deterministic_algorithms(True)
 
 
 def get_args_from_config():
