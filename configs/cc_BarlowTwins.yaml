@@ -1,16 +1,19 @@
 training:
-  dataset: 'cifar10'
-  datadir: ${env:TORCHVISION_DATA_DIR}/{dataset}.var/{dataset}_torchvision/
-  train_dataset: ${env:FFCV_DATA_DIR}/{dataset}/doubleImage_train.beton
-  val_dataset: ${env:FFCV_DATA_DIR}/{dataset}/test.beton
+  dataset: cifar10
+  # datadir: /home/arnab39/scratch/krishna/dothework/data
+  # train_dataset: /home/arnab39/scratch/krishna/dothework/ffcv/doubleImage_train.beton
+  # val_dataset: /home/arnab39/scratch/krishna/dothework/ffcv/test.beton
+  ffcv_datadir: /home/arnab39/scratch/krishna/dothework/ffcv
+  train_data_fname: doubleImage_train.beton
+  val_data_fname: test.beton
   batch_size: 512
   epochs: 100
   lambd: 0.0078125
-  projector_dim: 128
+  projector_dim: 1024
   seed: 42
   algorithm: 'ssl'
   model: 'resnet50proj'
   num_workers: 4
-  ckpt_dir: ${env:CHECKPOINT_DIR}
+  ckpt_dir: /home/arnab39/scratch/krishna/dothework/ckpt
   use_autocast: True
   log_interval: 100
