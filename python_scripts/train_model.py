@@ -13,6 +13,7 @@ python train_model.py --config-file configs/cc_barlow_twins.yaml
 
 
 from argparse import ArgumentParser
+from collections import defaultdict
 from functools import partial
 from typing import List
 
@@ -39,11 +40,13 @@ from fastargs import Section, Param
 from fastssl.data import (
     cifar_ffcv,
     cifar_classifier_ffcv,
+    cifar_ffcv_multiview,
     cifar_pt,
     stl_ffcv,
     stl10_pt,
     stl_classifier_ffcv,
 )
+from fastssl.models import emp
 from fastssl.models import barlow_twins as bt
 from fastssl.models import linear, byol, simclr, spectralreg
 
@@ -85,6 +88,7 @@ Section("training", "Fast CIFAR-10 training").params(
     use_autocast=Param(bool, "autocast fp16", default=True),
     track_alpha=Param(bool, "Track evolution of alpha", default=False),
     use_wandb=Param(bool, "Whether to use wandb_logging", default=False),
+    num_patches=Param(int, "Number of patches for patch embedding", default=16),
     algo_version=Param(
         str, "version of the self-supervised learning algorithm", default="1"
     ),
@@ -96,10 +100,17 @@ Section("eval", "Fast CIFAR-10 evaluation").params(
 )
 
 
+def bt_trainer(config):
+    """
+    Trainer class compatible with the ray api.
+    """
+    args = merge_with_args(config)
+    run_experiment(args)
+
+
 def build_dataloaders(
     dataset="cifar10",
     algorithm="ssl",
-    # datadir='data/',
     train_dataset=None,
     val_dataset=None,
     batch_size=128,
@@ -107,10 +118,11 @@ def build_dataloaders(
 ):
     if "cifar" in dataset:
         if algorithm in ("BarlowTwins", "SimCLR", "ssl", "byol", "spectralReg"):
-            # return cifar_pt(
-            #     datadir, batch_size=batch_size, num_workers=num_workers)
-            # for ffcv cifar10 dataloader
             return cifar_ffcv(train_dataset, val_dataset, batch_size, num_workers)
+        elif algorithm == "emp":
+            return cifar_ffcv_multiview(
+                train_dataset, val_dataset, batch_size, num_workers
+            )
         elif algorithm == "linear":
             default_linear_bsz = 512
             # dataloader for classifier
@@ -121,21 +133,12 @@ def build_dataloaders(
             raise Exception("Algorithm not implemented")
     elif dataset == "stl10":
         if algorithm in ("BarlowTwins", "SimCLR", "ssl", "byol", "spectralReg"):
-            # return stl10_pt(
-            #     datadir,
-            #     splits=["unlabeled"],
-            #     batch_size=batch_size,
-            #     num_workers=num_workers)
             return stl_ffcv(train_dataset, val_dataset, batch_size, num_workers)
         elif algorithm == "linear":
             default_linear_bsz = 256
             return stl_classifier_ffcv(
                 train_dataset, val_dataset, default_linear_bsz, num_workers
             )
-            # datadir,
-            # splits=["train", "test"],
-            # batch_size=batch_size,
-            # num_workers=num_workers)
         else:
             raise Exception("Algorithm not implemented")
     else:
@@ -220,6 +223,9 @@ def gen_ckpt_path(args, eval_args, epoch=100, prefix="exp", suffix="pth"):
                 args.weight_decay,
             ),
         )
+    else:
+        return None
+
     # create ckpt file name
     if suffix == "pth":
         ckpt_path = os.path.join(
@@ -260,7 +266,14 @@ def build_model(args=None):
     training = args.training
     eval = args.eval
 
-    if training.algorithm in ("BarlowTwins", "SimCLR", "ssl", "byol", "spectralReg"):
+    if training.algorithm in (
+        "BarlowTwins",
+        "SimCLR",
+        "ssl",
+        "byol",
+        "spectralReg",
+        "emp",
+    ):
         model_args = {
             "bkey": training.model,
             "dataset": training.dataset,
@@ -277,6 +290,9 @@ def build_model(args=None):
             # setting projector dim and hidden dim the same for SimCLR projector
             model_args["hidden_dim"] = training.projector_dim
             model_cls = simclr.SimCLR
+        elif training.algorithm in ("emp"):
+            model_args["hidden_dim"] = training.projector_dim
+            model_cls = emp.EMP
         else:
             model_args["hidden_dim"] = training.projector_dim
             model_cls = bt.BarlowTwins
@@ -285,8 +301,8 @@ def build_model(args=None):
         ckpt_path = gen_ckpt_path(training, eval, epoch=args.eval.epoch)
         model_args = {
             "bkey": training.model,  # supports : resnet50feat, resnet50proj
-            # "ckpt_path": ckpt_path,
-            "ckpt_path": None,
+            "ckpt_path": ckpt_path,
+            # "ckpt_path": None,
             "dataset": training.dataset,
             "feat_dim": training.projector_dim if "proj" in training.model else 2048,
             "num_classes": 10
@@ -303,6 +319,8 @@ def build_model(args=None):
 def build_loss_fn(args=None):
     if args.algorithm in ("BarlowTwins", "ssl"):
         return partial(bt.BarlowTwinLoss, _lambda=args.lambd)
+    elif args.algorithm in ("emp"):
+        return partial(emp.EMPLoss, _lambda=args.lambd, num_patches=args.num_patches)
     elif args.algorithm == "byol":
         return byol.BYOLLoss
     elif args.algorithm == "SimCLR":
@@ -339,6 +357,9 @@ def build_optimizer(model, args=None):
     """
     if args.algorithm in ("BarlowTwins", "SimCLR", "ssl", "byol", "spectralReg"):
         return Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+    elif args.algorithm in ("emp"):
+        # add LARS
+        return Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     elif args.algorithm == "linear":
         default_lr = 1e-3
         default_weight_decay = 1e-6
@@ -347,15 +368,6 @@ def build_optimizer(model, args=None):
         )
     else:
         raise Exception("Algorithm not implemented")
-
-
-# def save_images(img1,img2,name):
-#     import matplotlib.pyplot as plt
-#     plt.close('all')
-#     plt.imsave('test_imgs/{}1.png'.format(name),img1/255.)
-#     plt.close('all')
-#     plt.imsave('test_imgs/{}2.png'.format(name),img2/255.)
-#     plt.close('all')
 
 
 def train_step(
@@ -367,6 +379,7 @@ def train_step(
     loss_fn=None,
     scaler=None,
     epoch=None,
+    wandb_log_freq=25,
 ):
     """
     Generic trainer.
@@ -378,7 +391,6 @@ def train_step(
         optimizer :
         loss_fn:
     """
-
     total_loss, total_num, num_batches = 0.0, 0, 0
 
     ## setup dataloader + tqdm
@@ -389,11 +401,10 @@ def train_step(
 
     # for inp in dataloader:
     for inp in train_bar:
-        # if num_batches==0:
-        #     save_images(img1=inp[0][0].detach().cpu().numpy().transpose([1,2,0]),img2=inp[1][0].detach().cpu().numpy().transpose([1,2,0]),name='epoch_{}_img_'.format(epoch))
-        # breakpoint()
         if (
-            type(inp[0]) == type(inp[1]) and inp[0].shape == inp[1].shape
+            args.algorithm != "emp"
+            and type(inp[0]) == type(inp[1])
+            and inp[0].shape == inp[1].shape
         ):  # inp is a tuple with the two augmentations.
             inp = ((inp[0], inp[1]), None)
         ## backward
@@ -403,24 +414,29 @@ def train_step(
         if scaler:
             with autocast():
                 if args.algorithm == "byol":
-                    loss = loss_fn(model, target_model, inp)
+                    loss, loss_dict = loss_fn(model, target_model, inp)
                 elif args.algorithm in (
                     "BarlowTwins",
                     "SimCLR",
+                    "emp",
                     "ssl",
                     "linear",
                     "spectralReg",
                 ):
-                    loss = loss_fn(model, inp)
+                    loss, loss_dict = loss_fn(model, inp)
                 else:
                     raise Exception("Algorithm not implemented")
             scaler.scale(loss).backward()
             scaler.step(optimizer)
             scaler.update()
         else:
-            loss = loss_fn(model, inp)
+            loss, loss_dict = loss_fn(model, inp)
             loss.backward()
             optimizer.step()
+
+        if num_batches % wandb_log_freq == 0:
+            for k, v in loss_dict.items():
+                wandb.log({k: v.item()})
 
         ## update loss
         total_loss += loss.item()
@@ -479,18 +495,7 @@ def debug_plot(activations_eigen, alpha, ypred, R2, R2_100, figname):
 
 
 def train(model, loaders, optimizer, loss_fn, args, eval_args):
-    if args.track_alpha:
-        results = {
-            "train_loss": [],
-            "test_acc_1": [],
-            "test_acc_5": [],
-            "eigenspectrum": [],
-            "alpha": [],
-            "R2": [],
-            "R2_100": [],
-        }
-    else:
-        results = {"train_loss": [], "test_acc_1": [], "test_acc_5": []}
+    results = defaultdict(list)
 
     if args.algorithm == "linear":
         if args.use_autocast:
@@ -528,16 +533,14 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args):
             results["R2_arr"] = R2_arr
             results["R2_100_arr"] = R2_100_arr
 
-    if args.use_autocast:
-        scaler = GradScaler()
-    else:
-        scaler = None
+    scaler = GradScaler() if args.use_autocast else None
 
     if args.algorithm == "byol":
         target_model = copy.deepcopy(model)
         for param in list(target_model.parameters()):
             param.requires_grad = False
 
+    breakpoint()
     for epoch in range(1, args.epochs + 1):
         curr_results = {}
         if epoch == 1 and args.track_alpha:
@@ -610,9 +613,15 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args):
 
 
 def run_experiment(args):
-    # import ray
-    # num_cpus = int(os.environ.get('SLURM_CPUS_PER_TASK'))
-    # ray.init(num_cpus=2)
+    """
+    Runs a single experiment, including training and evaluation.
+    Construct loader, model, optimizer, loss_fn, and train the model.
+    Saves model to disk and logs results to wandb.
+
+    Args:
+        args (argparse.Namespace): command line arguments
+    """
+
     training = args.training
     eval = args.eval
 
@@ -623,7 +632,6 @@ def run_experiment(args):
     loaders = build_dataloaders(
         training.dataset,
         training.algorithm,
-        # training.datadir,
         training.train_dataset,
         training.val_dataset,
         training.batch_size,
@@ -654,34 +662,19 @@ def run_experiment(args):
         "results_{}_alpha".format(training.dataset),
         "npy",
     )
-    # with open(save_path, 'wb') as f:
-    # pickle.dump(results, f)
     np.save(save_path, results)
-    # if args.algorithm == 'linear':
-    #     wandb.log(results)
-
-
-def bt_trainer(config):
-    """
-    Trainer class compatible with the ray api.
-    """
-    args = merge_with_args(config)
-    run_experiment(args)
 
 
 if __name__ == "__main__":
     # gather arguments
     args = get_args_from_config()
 
-    breakpoint()
     wandb.init(
-        dir="/home/arnab39/scratch/krishna/dothework/wandb/",
+        dir=args.training.ckpt_dir,
         project="fastssl",
         entity="eigengroup",
     )
-    # args.training.datadir = args.training.datadir.format(dataset=args.training.dataset)
-    # args.training.train_dataset = args.training.train_dataset.format(dataset=args.training.dataset)
-    # args.training.val_dataset = args.training.val_dataset.format(dataset=args.training.dataset)
+
     # train model
     start_time = time.time()
     run_experiment(args)

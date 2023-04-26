@@ -1,0 +1,17 @@
+training:
+  dataset: cifar10
+  ffcv_datadir: /home/arnab39/scratch/krishna/dothework/ffcv
+  train_data_fname: multiview_20_train.beton
+  val_data_fname: test.beton
+  batch_size: 128
+  num_patches: 20
+  epochs: 100
+  lambd: 0.0078125
+  projector_dim: 1024
+  seed: 42
+  algorithm: emp
+  model: 'resnet50proj'
+  num_workers: 4
+  ckpt_dir: /home/arnab39/scratch/krishna/dothework/ckpt/emp
+  use_autocast: True
+  log_interval: 100
