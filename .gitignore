@@ -1,6 +1,7 @@
 *.egg-info/
 build/
 dist/
+wandb/
 
 results/
 **/__pycache__/
@@ -16,5 +17,6 @@ sbatch_err/
 **/._*.py
 **/*.DS_Store
 
+*.png
 **/.ipynb_checkpoints/*
 **/*.pkl
