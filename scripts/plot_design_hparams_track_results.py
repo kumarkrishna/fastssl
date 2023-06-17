@@ -165,6 +165,10 @@ res_all_files = []
 alpha_correction_due_to_minibatches = 0.0 #0.1
 min_accuracy = 100
 max_accuracy = -100
+tmp_vals = [0.05, 0.2, 0.5]
+pdim_vals= [1024]
+lamda_vals= [0.015832,0.001,0.5]
+bsz_vals = [256]
 for fidx,file in enumerate(tqdm(files_sorted)):
 	try:
 		if ssl_alg == 'simclr':
@@ -263,13 +267,32 @@ for fidx,file in enumerate(tqdm(files_sorted)):
 		if hparam_filter_val>0:
 			if hparam_filter_condition!=hparam_filter_val: 
 				continue
+			if ssl_alg=='simclr':
+				if temp_val not in tmp_vals: continue
+				if bsz_val not in bsz_vals: continue
+				if pdim_val not in pdim_vals: continue
+			elif ssl_alg=='barlowtwins':
+				if lamda_val not in lamda_vals: continue
+				if pdim_val not in pdim_vals: continue
+			else:
+				pass
 		res_all_files.append((epoch_alpha_dict,np.mean(accuracy_arr)))
 		if verbose:
-			tqdm.write("lamda = {}, alpha = {}, accuracy = {}".format(
-				lamda_val,
-				list(epoch_alpha_dict.values())[-1],
-				np.mean(accuracy_arr)
-			))
+			if ssl_alg=='barlowtwins':
+				tqdm.write("lamda = {}, pdim = {}, alpha = {}, accuracy = {}".format(
+					lamda_val,
+					pdim_val,
+					list(epoch_alpha_dict.values())[-1],
+					np.mean(accuracy_arr)
+				))
+			else:
+				tqdm.write("temp = {}, pdim = {}, bsz = {}, alpha = {}, accuracy = {}".format(
+					temp_val,
+					pdim_val,
+					bsz_val,
+					list(epoch_alpha_dict.values())[-1],
+					np.mean(accuracy_arr)
+				))
 		if flag_debug: 
 			plot_alpha_fit(
 				linear_dict,
