@@ -86,6 +86,8 @@ Section('training', 'Fast CIFAR-10 training').params(
         bool, 'Track evolution of alpha', default=False),
     precache=Param(
         bool, 'Precache outputs of network', default=False),
+    adaptive_ssl=Param(
+        bool, 'Use alpha to regularize SSL loss', default=False),
 )
 
 Section('eval', 'Fast CIFAR-10 evaluation').params(
@@ -546,6 +548,21 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args):
                 activations_eigen = powerlaw.get_eigenspectrum(activations)
                 alpha,ypred,R2,R2_100 = powerlaw.stringer_get_powerlaw(activations_eigen,
                                                                     trange=np.arange(3,100))
+                if args.adaptive_ssl:
+                    alpha_gt = max(0,alpha-1.2) # check if alpha > 1.2
+                    alpha_lt = max(0,0.8-alpha) # check if alpha < 0.8
+                    # use alpha_gt to increase lambda
+                    # use alpha_lt to decrease lambda
+                    curr_lambda = loss_fn.keywords['_lambda']
+                    tqdm.write('Current lamda = {:.6f}'.format(curr_lambda))
+                    # updated_lambda = curr_lambda*np.exp(alpha_gt-alpha_lt)
+                    updated_lambda = curr_lambda + 0.001*(alpha_gt-alpha_lt)
+                    tqdm.write('alpha = {:.3f}, New lamda = {:.6f}'.format(
+                        alpha,updated_lambda))
+                    loss_fn = partial(bt.BarlowTwinLoss,_lambda=updated_lambda)
+                    if 'lambda' not in results.keys():
+                        results['lambda'] = []
+                    results['lambda'].append((epoch,updated_lambda))
                 results['eigenspectrum'].append((epoch,activations_eigen))
                 results['alpha'].append((epoch,alpha))
                 results['R2'].append((epoch,R2))
