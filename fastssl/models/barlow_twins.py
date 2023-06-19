@@ -29,28 +29,47 @@ def BarlowTwinLoss(model, inp, _lambda=None):
     """
 
     # generate samples from tuple
-    (x1, x2), _ = inp
-    x1, x2 = x1.cuda(non_blocking=True), x2.cuda(non_blocking=True)
+    inp = list(inp)
+    _ = inp.pop(1)
+    num_augs = len(inp)
+    for x in inp: 
+        x = x.cuda(non_blocking=True)
+    # (x1, x2), _ = inp
+    # x1, x2 = x1.cuda(non_blocking=True), x2.cuda(non_blocking=True)
     # x1, x2 = TransformGPU(x1, x2)
 
-    bsz = x1.shape[0]
+    bsz = inp[0].shape[0]
+    # bsz = x1.shape[0]
     # x,_ = inp
     # x1,x2 = ssl_transform(x.cuda(non_blocking=True))
     # bsz = x1.shape[0]
     
     # forward pass
-    z1 = model(x1)
-    z2 = model(x2)
+    z_list = [model(x) for x in inp]
+    # z1 = model(x1)
+    # z2 = model(x2)
 
-    z1_norm = (z1 - z1.mean(0)) / z1.std(0) # NxD
-    z2_norm = (z2 - z2.mean(0)) / z2.std(0) # NxD
+    z_norm_list = [(z - z.mean(0)) / z.std(0) for z in z_list]
+    # z1_norm = (z1 - z1.mean(0)) / z1.std(0) # NxD
+    # z2_norm = (z2 - z2.mean(0)) / z2.std(0) # NxD
     
-    c = torch.mm(z1_norm.T, z2_norm) / bsz # DxD
+    on_diag = 0.
+    off_diag = 0.
+    # compute sum across all patches of each image for each embedding dim
+    z_norm_sum = torch.sum(torch.stack(z_norm_list),dim=0)
+    for i in range(num_augs):
+        # take embedding of one patch
+        z1_norm = z_norm_list[i]
+        # take mean embedding of all other patches
+        z2_norm = (z_norm_sum - z_norm_list[i])/(num_augs-1)
+        # compute BarlowTwins loss for each such pairing
+        c = torch.mm(z1_norm.T, z2_norm) / bsz # DxD
 
-    on_diag = torch.diagonal(c).add_(-1).pow_(2).sum()
-    off_diag = off_diagonal(c).pow_(2).sum()
-
-    loss = on_diag + _lambda * off_diag
+        # take sum across all patches
+        on_diag += torch.diagonal(c).add_(-1).pow_(2).sum()
+        off_diag += off_diagonal(c).pow_(2).sum()
+    # return average across all patches as the final loss
+    loss = (on_diag + _lambda * off_diag)/num_augs
     return loss
 
 

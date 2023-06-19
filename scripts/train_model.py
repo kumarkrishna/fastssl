@@ -338,7 +338,9 @@ def train_step(model, dataloader, args,
         # if num_batches==0:
         #     save_images(img1=inp[0][0].detach().cpu().numpy().transpose([1,2,0]),img2=inp[1][0].detach().cpu().numpy().transpose([1,2,0]),name='epoch_{}_img_'.format(epoch))
         # breakpoint()
-        if type(inp[0])==type(inp[1]) and inp[0].shape==inp[1].shape:   # inp is a tuple with the two augmentations.
+        if type(inp[0])==type(inp[1]) and inp[0].shape==inp[1].shape:   
+            # inp is a tuple with the two augmentations.
+            # This is legacy implementation of ffcv for dual augmentations 
             inp = ((inp[0],inp[1]), None)
         ## backward
         optimizer.zero_grad()
