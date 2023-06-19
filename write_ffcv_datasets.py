@@ -122,7 +122,7 @@ print("ffcv dataset stats...")
 mean = 0.0
 std = 0.0
 nb_samples = 0.
-for img,_ in loaders['train']:
+for img,_ in tqdm(loaders['train']):
 	batch_samples = img.size(0)
 	data = img.view(batch_samples,img.size(1),-1)
 	mean+= data.mean(2).sum(0)
@@ -135,7 +135,7 @@ print("Train Dataset std",std)
 mean = 0.0
 std = 0.0
 nb_samples = 0.
-for img,_ in loaders['test']:
+for img,_ in tqdm(loaders['test']):
 	batch_samples = img.size(0)
 	data = img.view(batch_samples,img.size(1),-1)
 	mean+= data.mean(2).sum(0)
@@ -150,7 +150,7 @@ print("tv dataset stats...")
 mean = 0.0
 std = 0.0
 nb_samples = 0.
-for img,_ in trainloader:
+for img,_ in tqdm(trainloader):
 	batch_samples = img.size(0)
 	data = img.view(batch_samples,img.size(1),-1)
 	mean+= data.mean(2).sum(0)
@@ -163,7 +163,7 @@ print("Train Dataset std",std)
 mean = 0.0
 std = 0.0
 nb_samples = 0.
-for img,_ in testloader:
+for img,_ in tqdm(testloader):
 	batch_samples = img.size(0)
 	data = img.view(batch_samples,img.size(1),-1)
 	mean+= data.mean(2).sum(0)
