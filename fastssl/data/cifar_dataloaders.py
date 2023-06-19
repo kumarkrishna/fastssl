@@ -152,6 +152,7 @@ def gen_image_label_pipeline_ffcv_ssl_test(
         'train': train_dataset,
         'test': val_dataset
     }
+    assert num_augmentations > 1, "Please use at least 2 augmentations for SSL."
     
     loaders = {}
     for split in ['train','test']:
@@ -189,7 +190,8 @@ def gen_image_label_pipeline_ffcv_ssl(
     num_workers: int = None,
     transform_cls: CifarTransformFFCV = None,
     rescale: bool = False,
-    device: str = 'cuda:0'):
+    device: str = 'cuda:0',
+    num_augmentations: int = 2):
     """
     Args:
         train_dataset : path to train dataset
@@ -204,18 +206,27 @@ def gen_image_label_pipeline_ffcv_ssl(
         'train': train_dataset,
         'test': val_dataset
     }
+    assert num_augmentations > 1, "Please use at least 2 augmentations for SSL."
     
     loaders = {}
 
     for split in ['train']:
         image_pipeline1 = gen_image_pipeline_ffcv_ssl(
             device=device, transform_cls=transform_cls, rescale=rescale)
-        image_pipeline2 = gen_image_pipeline_ffcv_ssl(
-            device=device, transform_cls=transform_cls, rescale=rescale)
         label_pipeline  = gen_label_pipeline(device=device)
+        image_pipeline_augs = [
+            gen_image_pipeline_ffcv_ssl(
+                device=device, transform_cls=transform_cls, rescale=rescale)
+        ]*(num_augmentations-1)     # creating other augmentations
 
         ordering = OrderOption.RANDOM #if split == 'train' else OrderOption.SEQUENTIAL
         # ordering = OrderOption.SEQUENTIAL #if split == 'train' else OrderOption.SEQUENTIAL
+
+        pipelines = {'image': image_pipeline1, 'label': label_pipeline}
+        custom_field_img_mapper = {}
+        for i,aug_pipeline in enumerate(image_pipeline_augs):
+            pipelines['image{}'.format(i+1)] = aug_pipeline
+            custom_field_img_mapper['image{}'.format(i+1)] = 'image'
 
         loaders[split] = Loader(
             datadir[split],
@@ -224,10 +235,8 @@ def gen_image_label_pipeline_ffcv_ssl(
             os_cache=True,
             order=ordering,
             drop_last=False,
-            pipelines={'image' : image_pipeline1,
-                        'image2': image_pipeline2,
-                        'label' : label_pipeline},     # The DoubleImage beton files don't have labels
-            custom_field_mapper={"image2": "image"}
+            pipelines=pipelines,
+            custom_field_mapper=custom_field_img_mapper
            )
 
     for split in ['test']:
@@ -263,7 +272,7 @@ def cifar_ffcv(
     if test_ffcv:
         gen_img_label_fn = gen_image_label_pipeline_ffcv_ssl_test
     else:
-        gen_img_label_fn = gen_image_label_pipeline_ffcv_ssl_test
+        gen_img_label_fn = gen_image_label_pipeline_ffcv_ssl
     return gen_img_label_fn(
         train_dataset=train_dataset,
         val_dataset=val_dataset,
