@@ -88,6 +88,8 @@ Section('training', 'Fast CIFAR-10 training').params(
         bool, 'Precache outputs of network', default=False),
     adaptive_ssl=Param(
         bool, 'Use alpha to regularize SSL loss', default=False),
+    num_augmentations=Param(
+        int, 'Number of augmentations to use per image', default=2),
 )
 
 Section('eval', 'Fast CIFAR-10 evaluation').params(
@@ -97,6 +99,8 @@ Section('eval', 'Fast CIFAR-10 evaluation').params(
         int, 'epoch', default=24),
     use_precache=Param(
         bool, 'Use Precached outputs of network', default=False),
+    num_augmentations_pretrain=Param(
+        int, 'Number of augmentations used for pretraining', default=2),
 )
 
 
@@ -107,7 +111,8 @@ def build_dataloaders(
     train_dataset=None,
     val_dataset=None,
     batch_size=128,
-    num_workers=2):
+    num_workers=2,
+    num_augmentations=2):
     if os.path.splitext(train_dataset)[-1] == '.npy':
         # using precached features!!
         print("Using simple dataloader")
@@ -123,12 +128,13 @@ def build_dataloaders(
             return cifar_ffcv(
                 train_dataset, val_dataset, 
                 batch_size, num_workers,
-                num_augmentations=2)
+                num_augmentations=num_augmentations)
         elif algorithm == 'linear':
             default_linear_bsz = 512
             # dataloader for classifier
             return cifar_classifier_ffcv(
-                train_dataset, val_dataset, default_linear_bsz, num_workers)
+                train_dataset, val_dataset, default_linear_bsz, 
+                num_workers,num_augmentations=num_augmentations)
         else:
             raise Exception("Algorithm not implemented")
     elif dataset == 'stl10':
@@ -269,9 +275,19 @@ def build_loss_fn(args=None):
         return partial(simclr.SimCLRLoss, _temperature=args.temperature)
     elif args.algorithm == 'linear':
         def classifier_xent(model, inp):
-            x, y = inp
-            x, y = x.cuda(non_blocking=True), y.cuda(non_blocking=True)
-            logits = model(x)
+            inp = list(inp)
+            # WARNING: every epoch could have different augmentations of images
+            y = inp.pop(1)
+            num_augs = len(inp)
+            # x, y = inp
+            for x in inp: 
+                x = x.cuda(non_blocking=True)
+            y = y.cuda(non_blocking=True)
+            # x, y = x.cuda(non_blocking=True), y.cuda(non_blocking=True)
+            feats_augs = [model.backbone(x) for x in inp]
+            # mean of features across different augmentations of each image
+            feats = torch.sum(torch.stack(feats_augs),dim=0)
+            logits = model(feats)
             return CrossEntropyLoss(label_smoothing=0.1)(logits, y)
         return classifier_xent
     else:
@@ -380,11 +396,23 @@ def eval_step(model, dataloader, epoch=None, epochs=None):
     model.eval()
     total_correct_1, total_correct_5, total_samples = 0.0, 0.0, 0
     test_bar = tqdm(dataloader, desc='Test')
-    for data, target in test_bar:
-        total_samples += data.shape[0]
-        data, target = data.cuda(non_blocking=True), target.cuda(non_blocking=True)
+    for inp in test_bar:
+    # for data, target in test_bar:
+        inp = list(inp)
+        # WARNING: every epoch could have different augmentations of images
+        target = inp.pop(1)
+        for x in inp: 
+            x = x.cuda(non_blocking=True)
+        target = target.cuda(non_blocking=True)
+        total_samples += inp[0].shape[0]
+        # total_samples += data.shape[0]
+        # data, target = data.cuda(non_blocking=True), target.cuda(non_blocking=True)
         with autocast():
-            logits = model(data)
+            feats_augs = [model.backbone(x) for x in inp]
+            # mean of features across different augmentations of each image
+            feats = torch.sum(torch.stack(feats_augs),dim=0)
+            logits = model(feats)
+            # logits = model(data)
             preds = torch.argsort(logits, dim=1, descending=True)
             total_correct_1 += torch.sum((preds[:, 0:1] == target[:, None]).any(dim=-1).float()).item()
             total_correct_5 += torch.sum((preds[:, 0:5] == target[:, None]).any(dim=-1).float()).item()
@@ -412,11 +440,20 @@ def precache_outputs(model, loaders, args, eval_args):
     trainset_outputs = []
     trainset_labels = []
     train_bar = tqdm(loaders['train'], desc='Train set')
-    for data, target in train_bar:
-        data = data.cuda(non_blocking=True)
+    for inp in train_bar:
+    # for data, target in train_bar:
+        inp = list(inp)
+        # WARNING: every epoch could have different augmentations of images
+        target = inp.pop(1)
+        for x in inp: 
+            x = x.cuda(non_blocking=True)
+        # data = data.cuda(non_blocking=True)
         with autocast():
             with torch.no_grad():
-                out = model(data)
+                out_augs = [model(x) for x in inp]
+                # mean of features across different augmentations of each image
+                out = torch.sum(torch.stack(out_augs),dim=0)
+                # out = model(data)
         trainset_outputs.append(out.data.cpu().float())
         trainset_labels.append(target.data.cpu())
     trainset_outputs = torch.cat(trainset_outputs)
@@ -425,11 +462,20 @@ def precache_outputs(model, loaders, args, eval_args):
     testset_outputs = []
     testset_labels = []
     test_bar = tqdm(loaders['test'], desc='Test set')
-    for data, target in test_bar:
-        data = data.cuda(non_blocking=True)
+    for inp in test_bar:
+    # for data, target in test_bar:
+        inp = list(inp)
+        # WARNING: every epoch could have different augmentations of images
+        target = inp.pop(1)
+        for x in inp: 
+            x = x.cuda(non_blocking=True)
+        # data = data.cuda(non_blocking=True)
         with autocast():
             with torch.no_grad():
-                out = model(data)
+                out_augs = [model(x) for x in inp]
+                # mean of features across different augmentations of each image
+                out = torch.sum(torch.stack(out_augs),dim=0)
+                # out = model(data)
         testset_outputs.append(out.data.cpu().float())
         testset_labels.append(target.data.cpu())
     testset_outputs = torch.cat(testset_outputs)
@@ -628,8 +674,10 @@ def run_experiment(args):
         training.train_dataset,
         training.val_dataset,
         training.batch_size,
-        training.num_workers)
+        training.num_workers,
+        training.num_augmentations)
     print("CONSTRUCTED DATA LOADERS")
+    breakpoint()
 
     # build model from SSL library
     model = build_model(args)
