@@ -18,37 +18,53 @@ def SimCLRLoss(model, inp, _temperature=0.05):
         loss: scalar tensor
     """
 
-    # generate samples from tuple 
+    # generate samples from tuple
+    inp = list(inp)
+    _ = inp.pop(1)
+    num_augs = len(inp)
+    for x in inp: 
+        x = x.cuda(non_blocking=True)
+    # (x1, x2), _ = inp
+    # x1, x2 = x1.cuda(non_blocking=True), x2.cuda(non_blocking=True)
 
-    (x1, x2), _ = inp
-    x1, x2 = x1.cuda(non_blocking=True), x2.cuda(non_blocking=True)
-    bsz = x1.shape[0]
+    bsz=inp[0].shape
+    # bsz = x1.shape[0]
     
     # forward pass
-    z1 = model(x1)   #NXD
-    z2 = model(x2)   #NXD
+    z_list = [model(x) for x in inp]
+    # z1 = model(x1)   #NXD
+    # z2 = model(x2)   #NXD
 
-    z1_norm = F.normalize(z1, dim=-1) 
-    z2_norm = F.normalize(z2, dim=-1)
-    
-    all_z_norm = torch.cat([z1_norm, z2_norm], dim=0)
-    
-    similarity_scores = (all_z_norm @ all_z_norm.T) / _temperature
-    eps = 1e-9
-    
-    ones = torch.ones(bsz)
-    mask = (torch.diag(ones, bsz) + torch.diag(ones, -bsz)).cuda(non_blocking=True)
-    
-    # subtract max value for stability
-    logits = similarity_scores - similarity_scores.max(dim=-1, keepdim=True)[0].detach()
-    # remove the diagonal entries of all 1./_temperature because they are cosine
-    # similarity of one image to itself.
-    exp_logits = torch.exp(logits) * (1 - torch.eye(2 * bsz)).cuda(non_blocking=True)
-    
-    log_likelihood = - logits + torch.log(exp_logits.sum(dim=-1, keepdim=True) + eps)
-    
-    loss = (log_likelihood * mask).sum()/ mask.sum()
+    z_norm_list = [(z - z.mean(0)) / z.std(0) for z in z_list]
+    # z1_norm = F.normalize(z1, dim=-1) 
+    # z2_norm = F.normalize(z2, dim=-1)
 
+    loss = 0.
+    # compute sum across all patches of each image for each embedding dim
+    z_norm_sum = torch.sum(torch.stack(z_norm_list),dim=0)
+    for i in range(num_augs):
+        # take embedding of one patch
+        z1_norm = z_norm_list[i]
+        # take mean embedding of all other patches
+        z2_norm = (z_norm_sum - z_norm_list[i])/(num_augs-1)
+        all_z_norm = torch.cat([z1_norm, z2_norm], dim=0)
+        
+        similarity_scores = (all_z_norm @ all_z_norm.T) / _temperature
+        eps = 1e-9
+        
+        ones = torch.ones(bsz)
+        mask = (torch.diag(ones, bsz) + torch.diag(ones, -bsz)).cuda(non_blocking=True)
+        
+        # subtract max value for stability
+        logits = similarity_scores - similarity_scores.max(dim=-1, keepdim=True)[0].detach()
+        # remove the diagonal entries of all 1./_temperature because they are cosine
+        # similarity of one image to itself.
+        exp_logits = torch.exp(logits) * (1 - torch.eye(2 * bsz)).cuda(non_blocking=True)
+        
+        log_likelihood = - logits + torch.log(exp_logits.sum(dim=-1, keepdim=True) + eps)
+    
+        loss += (log_likelihood * mask).sum()/ mask.sum()
+    loss = loss/num_augs
     return loss
 
 class SimCLR(SSL):
