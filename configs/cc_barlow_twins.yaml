@@ -14,3 +14,4 @@ training:
   ckpt_dir: 'checkpoints'
   use_autocast: True
   log_interval: 100
+  num_augmentations: 2

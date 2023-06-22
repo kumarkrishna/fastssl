@@ -14,7 +14,9 @@ training:
   num_workers: 4
   ckpt_dir: 'checkpoints'
   use_autocast: True
+  num_augmentations: 1
 eval:
   train_algorithm: 'ssl'
   epoch: 100
   use_precache: True
+  num_augmentations_pretrain: 2
