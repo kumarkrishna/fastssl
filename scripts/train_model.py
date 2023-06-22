@@ -188,8 +188,16 @@ def gen_ckpt_path(
         main_dir = os.path.join(main_dir,model_name)
         if args.algorithm == 'linear':
             dir_algorithm = eval_args.train_algorithm
+            main_dir = os.path.join(
+                main_dir,
+                '{}_augs'.format(eval_args.num_augmentations_pretrain),
+                '{}_augs_eval'.format(args.num_augmentations)
+            )
         else:
             dir_algorithm = args.algorithm
+            main_dir = os.path.join(
+                main_dir,'{}_augs'.format(args.num_augmentations)
+            )
         if dir_algorithm in ['ssl','BarlowTwins']:
             ckpt_dir = os.path.join(
                 main_dir, 'lambd_{:.6f}_pdim_{}{}_lr_{}_wd_{}'.format(
