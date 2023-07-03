@@ -58,11 +58,25 @@ class LinearClassifier(nn.Module):
         
 
     def forward(self, x):
-        if self.backbone is not None:
-            x = self.backbone(x)
-        if 'proj' in self.bkey:
-            x = torch.flatten(x, start_dim=1)
-            x = self.backbone.proj(x)
-        feats = torch.flatten(x, start_dim=1)
+        if isinstance(x, list):
+            # x is a list of augs -- need to average feats over augs
+            if self.backbone is not None:
+                feats_augs = [self.backbone(x_i) for x_i in x]
+            else:
+                feats_augs = [x_i for x_i in x]
+            if 'proj' in self.bkey:
+                feats_augs = [torch.flatten(x_i, start_dim=1) for x_i in feats_augs]
+                feats_augs = [self.backbone.proj(x_i) for x_i in feats_augs]
+            # mean of features across different augmentations of each image
+            feats = torch.mean(torch.stack(feats_augs),dim=0).cuda()
+            feats = torch.flatten(feats, start_dim=1)
+        else:
+            # x is just one input
+            if self.backbone is not None:
+                x = self.backbone(x)
+            if 'proj' in self.bkey:
+                x = torch.flatten(x, start_dim=1)
+                x = self.backbone.proj(x)
+            feats = torch.flatten(x, start_dim=1)
         preds = self.fc(feats)
         return preds
