@@ -292,10 +292,7 @@ def build_loss_fn(args=None):
                 x = x.cuda(non_blocking=True)
             y = y.cuda(non_blocking=True)
             # x, y = x.cuda(non_blocking=True), y.cuda(non_blocking=True)
-            feats_augs = [model.backbone(x) for x in inp]
-            # mean of features across different augmentations of each image
-            feats = torch.sum(torch.stack(feats_augs),dim=0)
-            logits = model(feats)
+            logits = model(x)
             return CrossEntropyLoss(label_smoothing=0.1)(logits, y)
         return classifier_xent
     else:
@@ -416,11 +413,7 @@ def eval_step(model, dataloader, epoch=None, epochs=None):
         # total_samples += data.shape[0]
         # data, target = data.cuda(non_blocking=True), target.cuda(non_blocking=True)
         with autocast():
-            feats_augs = [model.backbone(x) for x in inp]
-            # mean of features across different augmentations of each image
-            feats = torch.sum(torch.stack(feats_augs),dim=0)
-            logits = model(feats)
-            # logits = model(data)
+            logits = model(inp)
             preds = torch.argsort(logits, dim=1, descending=True)
             total_correct_1 += torch.sum((preds[:, 0:1] == target[:, None]).any(dim=-1).float()).item()
             total_correct_5 += torch.sum((preds[:, 0:5] == target[:, None]).any(dim=-1).float()).item()
@@ -685,7 +678,7 @@ def run_experiment(args):
         training.num_workers,
         training.num_augmentations)
     print("CONSTRUCTED DATA LOADERS")
-    breakpoint()
+    # breakpoint()
 
     # build model from SSL library
     model = build_model(args)
