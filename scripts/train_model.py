@@ -186,18 +186,20 @@ def gen_ckpt_path(
         model_name = model_name.replace('proj','')
         model_name = model_name.replace('feat','')
         main_dir = os.path.join(main_dir,model_name)
+        # dir for augs during SSL pretraining
         if args.algorithm == 'linear':
             dir_algorithm = eval_args.train_algorithm
             main_dir = os.path.join(
                 main_dir,
-                '{}_augs'.format(eval_args.num_augmentations_pretrain),
-                '{}_augs_eval'.format(args.num_augmentations)
+                '{}_augs'.format(eval_args.num_augmentations_pretrain)
             )
         else:
             dir_algorithm = args.algorithm
             main_dir = os.path.join(
                 main_dir,'{}_augs'.format(args.num_augmentations)
             )
+
+        # dir for SSL hparams
         if dir_algorithm in ['ssl','BarlowTwins']:
             ckpt_dir = os.path.join(
                 main_dir, 'lambd_{:.6f}_pdim_{}{}_lr_{}_wd_{}'.format(
@@ -212,6 +214,13 @@ def gen_ckpt_path(
                             args.projector_dim,
                             '_no_autocast' if not args.use_autocast else '',
                             args.batch_size,args.lr, args.weight_decay))
+            
+        # dir for augs during linear eval
+        if args.algorithm == 'linear':
+            ckpt_dir = os.path.join(
+                ckpt_dir,
+                '{}_augs_eval'.format(args.num_augmentations)
+            )
         # create ckpt file name
         ckpt_path = os.path.join(ckpt_dir, '{}{}{}.{}'.format(
             prefix, 
