@@ -142,6 +142,7 @@ def gen_image_label_pipeline(
     loaders = {}
 
     for split in ["train", "test"]:
+        if datadir[split] is None: continue
         label_pipeline = gen_label_pipeline(device=device)
         image_pipeline = gen_image_pipeline(
             device=device, transform_cls=transform_cls, rescale=rescale
