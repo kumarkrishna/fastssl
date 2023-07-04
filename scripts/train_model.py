@@ -462,7 +462,7 @@ def precache_outputs(model, loaders, args, eval_args):
             with torch.no_grad():
                 out_augs = [model(x) for x in inp]
                 # mean of features across different augmentations of each image
-                out = torch.sum(torch.stack(out_augs),dim=0)
+                out = torch.mean(torch.stack(out_augs),dim=0)
                 # out = model(data)
         trainset_outputs.append(out.data.cpu().float())
         trainset_labels.append(target.data.cpu())
@@ -484,7 +484,7 @@ def precache_outputs(model, loaders, args, eval_args):
             with torch.no_grad():
                 out_augs = [model(x) for x in inp]
                 # mean of features across different augmentations of each image
-                out = torch.sum(torch.stack(out_augs),dim=0)
+                out = torch.mean(torch.stack(out_augs),dim=0)
                 # out = model(data)
         testset_outputs.append(out.data.cpu().float())
         testset_labels.append(target.data.cpu())
