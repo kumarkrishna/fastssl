@@ -5,23 +5,37 @@
 * SSL : Seems like FP32 is important for good performance.
     * 
 """
-from typing import List 
+from typing import List
 
 from ffcv.fields import IntField, RGBImageField
-from ffcv.fields.decoders import IntDecoder, SimpleRGBImageDecoder, RandomResizedCropRGBImageDecoder
+from ffcv.fields.decoders import (
+    IntDecoder,
+    SimpleRGBImageDecoder,
+    RandomResizedCropRGBImageDecoder,
+)
 from ffcv.loader import Loader, OrderOption
 from ffcv.pipeline.operation import Operation
 import numpy as np
 import torch
-from ffcv.transforms import RandomResizedCrop, RandomHorizontalFlip, Cutout, \
-    RandomTranslate, Convert, ToDevice, ToTensor, ToTorchImage
+from ffcv.transforms import (
+    RandomResizedCrop,
+    RandomHorizontalFlip,
+    Cutout,
+    RandomTranslate,
+    Convert,
+    ToDevice,
+    ToTensor,
+    ToTorchImage,
+)
 from ffcv.transforms.common import Squeeze
 
-from fastssl.data.cifar_transforms import CifarTransform, \
-                                        CifarClassifierTransform, \
-                                        SSLPT_CIFAR, \
-                                        ReScale, \
-                                        CifarTransformFFCV
+from fastssl.data.cifar_transforms import (
+    CifarTransform,
+    CifarClassifierTransform,
+    SSLPT_CIFAR,
+    ReScale,
+    CifarTransformFFCV,
+)
 
 
 import torch
@@ -29,14 +43,16 @@ from torch.utils.data import DataLoader
 import torchvision
 import torchvision.transforms as transforms
 
+
 def to_device(device):
-    if device == 'cuda:0':
+    if device == "cuda:0":
         return ToDevice(device, non_blocking=True)
     else:
         return ToDevice("cpu")
 
+
 def gen_image_pipeline(device="cuda:0", transform_cls=None, rescale=False):
-    image_pipeline : List[Operation] = [
+    image_pipeline: List[Operation] = [
         SimpleRGBImageDecoder(),
         ToTensor(),
         to_device(device),
@@ -51,37 +67,46 @@ def gen_image_pipeline(device="cuda:0", transform_cls=None, rescale=False):
 
     return image_pipeline
 
+
 def gen_image_pipeline_ffcv_ssl(device="cuda:0", transform_cls=None, rescale=False):
     if transform_cls:
-        image_pipeline : List[Operation] = [RandomResizedCropRGBImageDecoder(
-                                        output_size=(
-                                            transform_cls.dataset_side_length,
-                                            transform_cls.dataset_side_length),
-                                        scale=transform_cls.dataset_resize_scale,
-                                        ratio=transform_cls.dataset_resize_ratio
-                                        )]
-    
-        image_pipeline.extend(transform_cls.transform_list)
-    
-    else:
-        image_pipeline : List[Operation] = [SimpleRGBImageDecoder()]
+        image_pipeline: List[Operation] = [
+            RandomResizedCropRGBImageDecoder(
+                output_size=(
+                    transform_cls.dataset_side_length,
+                    transform_cls.dataset_side_length,
+                ),
+                scale=transform_cls.dataset_resize_scale,
+                ratio=transform_cls.dataset_resize_ratio,
+            )
+        ]
 
-    image_pipeline.extend([
-        ToTensor(),
-        to_device(device),
-        ToTorchImage(),
-        Convert(torch.float32),
-    ])
+        image_pipeline.extend(transform_cls.transform_list)
+
+    else:
+        image_pipeline: List[Operation] = [SimpleRGBImageDecoder()]
+
+    image_pipeline.extend(
+        [
+            ToTensor(),
+            to_device(device),
+            ToTorchImage(),
+            Convert(torch.float32),
+        ]
+    )
 
     return image_pipeline
+
 
 def gen_label_pipeline(device="cuda:0", transform_cls=None):
     label_pipeline: List[Operation] = [
         IntDecoder(),
         ToTensor(),
         ToDevice("cuda:0"),
-        Squeeze()]
+        Squeeze(),
+    ]
     return label_pipeline
+
 
 def gen_image_label_pipeline(
     train_dataset: str = None,
@@ -90,9 +115,10 @@ def gen_image_label_pipeline(
     num_workers: int = None,
     transform_cls: CifarClassifierTransform = None,
     rescale: bool = False,
-    device: str = 'cuda:0',
+    device: str = "cuda:0",
     num_augmentations: int = 1,
-    transform_cls_augs: CifarTransformFFCV = None,):
+    transform_cls_augs: CifarTransformFFCV = None,
+):
     """Generate image and label pipelines for supervised classification.
 
     Args:
@@ -110,46 +136,46 @@ def gen_image_label_pipeline(
         loaders : dict('train': dataloader, 'test': dataloader)
     """
 
-    datadir = {
-        'train': train_dataset,
-        'test': val_dataset
-    }
+    datadir = {"train": train_dataset, "test": val_dataset}
     assert num_augmentations > 0, "Please use at least 1 augmentation for classifier."
-    
+
     loaders = {}
 
-    for split in ['train', 'test']:
-        label_pipeline  = gen_label_pipeline(device=device)
+    for split in ["train", "test"]:
+        label_pipeline = gen_label_pipeline(device=device)
         image_pipeline = gen_image_pipeline(
-            device=device, transform_cls=transform_cls, rescale=rescale)
+            device=device, transform_cls=transform_cls, rescale=rescale
+        )
         if num_augmentations > 1:
             image_pipeline_augs = [
                 gen_image_pipeline_ffcv_ssl(
-                    device=device, transform_cls=transform_cls_augs, rescale=rescale)
-                ]*(num_augmentations-1)
+                    device=device, transform_cls=transform_cls_augs, rescale=rescale
+                )
+            ] * (num_augmentations - 1)
         else:
             image_pipeline_augs = []
-        ordering = OrderOption.RANDOM if split == 'train' else OrderOption.SEQUENTIAL
+        ordering = OrderOption.RANDOM if split == "train" else OrderOption.SEQUENTIAL
         # ordering = OrderOption.RANDOM #if split == 'train' else OrderOption.SEQUENTIAL
 
-        pipelines = {'image': image_pipeline, 'label': label_pipeline}
+        pipelines = {"image": image_pipeline, "label": label_pipeline}
         custom_field_img_mapper = {}
-        for i,aug_pipeline in enumerate(image_pipeline_augs):
-            pipelines['image{}'.format(i+1)] = aug_pipeline
-            custom_field_img_mapper['image{}'.format(i+1)] = 'image'
+        for i, aug_pipeline in enumerate(image_pipeline_augs):
+            pipelines["image{}".format(i + 1)] = aug_pipeline
+            custom_field_img_mapper["image{}".format(i + 1)] = "image"
 
         loaders[split] = Loader(
             datadir[split],
-            batch_size=batch_size,  
+            batch_size=batch_size,
             num_workers=num_workers,
             os_cache=True,
             order=ordering,
             drop_last=False,
             # pipelines={'image' : image_pipeline, 'label' : label_pipeline}
             pipelines=pipelines,
-            custom_field_mapper=custom_field_img_mapper
-           )
+            custom_field_mapper=custom_field_img_mapper,
+        )
     return loaders
+
 
 def gen_image_label_pipeline_ffcv_ssl_test(
     train_dataset: str = None,
@@ -158,8 +184,9 @@ def gen_image_label_pipeline_ffcv_ssl_test(
     num_workers: int = None,
     transform_cls: CifarTransformFFCV = None,
     rescale: bool = False,
-    device: str = 'cuda:0',
-    num_augmentations: int = 2):
+    device: str = "cuda:0",
+    num_augmentations: int = 2,
+):
     """Test function for generating multiple augmentations from each image.
 
     Args:
@@ -175,39 +202,37 @@ def gen_image_label_pipeline_ffcv_ssl_test(
     Returns:
         loaders: dict('train': dataloader, 'test': dataloader)
     """
-    datadir = {
-        'train': train_dataset,
-        'test': val_dataset
-    }
+    datadir = {"train": train_dataset, "test": val_dataset}
     assert num_augmentations > 1, "Please use at least 2 augmentations for SSL."
-    
+
     loaders = {}
-    for split in ['train','test']:
+    for split in ["train", "test"]:
         if datadir[split] is None: continue
-        image_pipeline_og = gen_image_pipeline(device=device,rescale=rescale)
-        label_pipeline  = gen_label_pipeline(device=device)
+        image_pipeline_og = gen_image_pipeline(device=device, rescale=rescale)
+        label_pipeline = gen_label_pipeline(device=device)
         image_pipeline_augs = [
             gen_image_pipeline_ffcv_ssl(
-                device=device, transform_cls=transform_cls, rescale=rescale)
-        ]*num_augmentations
+                device=device, transform_cls=transform_cls, rescale=rescale
+            )
+        ] * num_augmentations
         ordering = OrderOption.SEQUENTIAL
-        pipelines = {'image': image_pipeline_og, 'label': label_pipeline}
+        pipelines = {"image": image_pipeline_og, "label": label_pipeline}
         custom_field_img_mapper = {}
-        for i,aug_pipeline in enumerate(image_pipeline_augs):
-            pipelines['image{}'.format(i+1)] = aug_pipeline
-            custom_field_img_mapper['image{}'.format(i+1)] = 'image'
+        for i, aug_pipeline in enumerate(image_pipeline_augs):
+            pipelines["image{}".format(i + 1)] = aug_pipeline
+            custom_field_img_mapper["image{}".format(i + 1)] = "image"
 
         loaders[split] = Loader(
             datadir[split],
-            batch_size=batch_size,  
+            batch_size=batch_size,
             num_workers=num_workers,
             os_cache=True,
             order=ordering,
             drop_last=False,
             pipelines=pipelines,
-            custom_field_mapper=custom_field_img_mapper
-           )
-        
+            custom_field_mapper=custom_field_img_mapper,
+        )
+
     return loaders
 
 
@@ -218,75 +243,81 @@ def gen_image_label_pipeline_ffcv_ssl(
     num_workers: int = None,
     transform_cls: CifarTransformFFCV = None,
     rescale: bool = False,
-    device: str = 'cuda:0',
-    num_augmentations: int = 2):
+    device: str = "cuda:0",
+    num_augmentations: int = 2,
+):
     """
     Args:
         train_dataset : path to train dataset
-        val_dataset   : path to test dataset 
+        val_dataset   : path to test dataset
         batch_size    : batch-size
         num_workers   : number of workers
-    Returns 
+    Returns
         loaders       : dict('train': dataloader, 'test': dataloader)
     """
 
-    datadir = {
-        'train': train_dataset,
-        'test': val_dataset
-    }
+    datadir = {"train": train_dataset, "test": val_dataset}
     assert num_augmentations > 1, "Please use at least 2 augmentations for SSL."
-    
+
     loaders = {}
 
-    for split in ['train']:
+    for split in ["train"]:
         if train_dataset is None: continue
         image_pipeline1 = gen_image_pipeline_ffcv_ssl(
-            device=device, transform_cls=transform_cls, rescale=rescale)
-        label_pipeline  = gen_label_pipeline(device=device)
+            device=device, transform_cls=transform_cls, rescale=rescale
+        )
+        label_pipeline = gen_label_pipeline(device=device)
         image_pipeline_augs = [
             gen_image_pipeline_ffcv_ssl(
-                device=device, transform_cls=transform_cls, rescale=rescale)
-        ]*(num_augmentations-1)     # creating other augmentations
+                device=device, transform_cls=transform_cls, rescale=rescale
+            )
+        ] * (
+            num_augmentations - 1
+        )  # creating other augmentations
 
-        ordering = OrderOption.RANDOM #if split == 'train' else OrderOption.SEQUENTIAL
+        ordering = OrderOption.RANDOM  # if split == 'train' else OrderOption.SEQUENTIAL
         # ordering = OrderOption.SEQUENTIAL #if split == 'train' else OrderOption.SEQUENTIAL
 
-        pipelines = {'image': image_pipeline1, 'label': label_pipeline}
+        pipelines = {"image": image_pipeline1, "label": label_pipeline}
         custom_field_img_mapper = {}
-        for i,aug_pipeline in enumerate(image_pipeline_augs):
-            pipelines['image{}'.format(i+1)] = aug_pipeline
-            custom_field_img_mapper['image{}'.format(i+1)] = 'image'
+        for i, aug_pipeline in enumerate(image_pipeline_augs):
+            pipelines["image{}".format(i + 1)] = aug_pipeline
+            custom_field_img_mapper["image{}".format(i + 1)] = "image"
 
         loaders[split] = Loader(
             datadir[split],
-            batch_size=batch_size,  
+            batch_size=batch_size,
             num_workers=num_workers,
             os_cache=True,
             order=ordering,
             drop_last=False,
             pipelines=pipelines,
-            custom_field_mapper=custom_field_img_mapper
-           )
+            custom_field_mapper=custom_field_img_mapper,
+        )
 
-    for split in ['test']:
+    for split in ["test"]:
         if val_dataset is None: continue
-        label_pipeline  = gen_label_pipeline(device=device)
+        label_pipeline = gen_label_pipeline(device=device)
         image_pipeline = gen_image_pipeline(
-            device=device, transform_cls=CifarClassifierTransform, rescale=rescale)
+            device=device, transform_cls=CifarClassifierTransform, rescale=rescale
+        )
 
-        ordering = OrderOption.SEQUENTIAL #if split == 'train' else OrderOption.SEQUENTIAL
+        ordering = (
+            OrderOption.SEQUENTIAL
+        )  # if split == 'train' else OrderOption.SEQUENTIAL
 
         loaders[split] = Loader(
             datadir[split],
-            batch_size=batch_size,  
+            batch_size=batch_size,
             num_workers=num_workers,
             os_cache=True,
             order=ordering,
             drop_last=False,
-            pipelines={'image' : image_pipeline, 'label' : label_pipeline}
-           )
+            pipelines={"image": image_pipeline, "label": label_pipeline},
+        )
 
     return loaders
+
 
 def cifar_ffcv(
     train_dataset: str = None,
@@ -295,8 +326,8 @@ def cifar_ffcv(
     num_workers: int = None,
     device: str = "cuda:0",
     num_augmentations: int = 2,
-    test_ffcv: bool = False):
-
+    test_ffcv: bool = False,
+):
     # transform_cls = CifarTransform
     transform_cls = CifarTransformFFCV()
     if test_ffcv:
@@ -311,7 +342,9 @@ def cifar_ffcv(
         transform_cls=transform_cls,
         rescale=False,
         device=device,
-        num_augmentations=num_augmentations)
+        num_augmentations=num_augmentations,
+    )
+
 
 def cifar_classifier_ffcv(
     train_dataset: str = None,
@@ -319,7 +352,8 @@ def cifar_classifier_ffcv(
     batch_size: int = None,
     num_workers: int = None,
     device: str = "cuda:0",
-    num_augmentations: int = 1,):
+    num_augmentations: int = 1,
+):
     """Function to return
 
     Args:
@@ -333,7 +367,7 @@ def cifar_classifier_ffcv(
     Returns:
         _type_: _description_
     """
-    
+
     transform_cls = CifarClassifierTransform
     transform_cls_extra_augs = CifarTransformFFCV()
     return gen_image_label_pipeline(
@@ -344,23 +378,25 @@ def cifar_classifier_ffcv(
         transform_cls=transform_cls,
         device=device,
         num_augmentations=num_augmentations,
-        transform_cls_augs=transform_cls_extra_augs)
+        transform_cls_augs=transform_cls_extra_augs,
+    )
 
-def cifar_pt(
-    datadir,
-    batch_size=None,
-    num_workers=None,
-    device="cuda:0"):
+
+def cifar_pt(datadir, batch_size=None, num_workers=None, device="cuda:0"):
     """
     Create pytorch compatible dataloaders for CIFAR-10.
     """
     loaders = {}
-    for split in ['train', 'test']:
+    for split in ["train", "test"]:
         dataset = torchvision.datasets.CIFAR10(
-            root=datadir, train=split == 'train', download=True,
-            transform=SSLPT_CIFAR())
+            root=datadir, train=split == "train", download=True, transform=SSLPT_CIFAR()
+        )
         loaders[split] = DataLoader(
             # dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
-            dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=True)
+            dataset,
+            batch_size=batch_size,
+            shuffle=True,
+            num_workers=num_workers,
+            pin_memory=True,
+        )
     return loaders
-
