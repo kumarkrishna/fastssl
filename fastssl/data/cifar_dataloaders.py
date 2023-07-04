@@ -183,6 +183,7 @@ def gen_image_label_pipeline_ffcv_ssl_test(
     
     loaders = {}
     for split in ['train','test']:
+        if datadir[split] is None: continue
         image_pipeline_og = gen_image_pipeline(device=device,rescale=rescale)
         label_pipeline  = gen_label_pipeline(device=device)
         image_pipeline_augs = [
@@ -238,6 +239,7 @@ def gen_image_label_pipeline_ffcv_ssl(
     loaders = {}
 
     for split in ['train']:
+        if train_dataset is None: continue
         image_pipeline1 = gen_image_pipeline_ffcv_ssl(
             device=device, transform_cls=transform_cls, rescale=rescale)
         label_pipeline  = gen_label_pipeline(device=device)
@@ -267,6 +269,7 @@ def gen_image_label_pipeline_ffcv_ssl(
            )
 
     for split in ['test']:
+        if val_dataset is None: continue
         label_pipeline  = gen_label_pipeline(device=device)
         image_pipeline = gen_image_pipeline(
             device=device, transform_cls=CifarClassifierTransform, rescale=rescale)

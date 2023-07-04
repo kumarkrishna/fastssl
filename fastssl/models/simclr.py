@@ -27,7 +27,7 @@ def SimCLRLoss(model, inp, _temperature=0.05):
     # (x1, x2), _ = inp
     # x1, x2 = x1.cuda(non_blocking=True), x2.cuda(non_blocking=True)
 
-    bsz=inp[0].shape
+    bsz=inp[0].shape[0]
     # bsz = x1.shape[0]
     
     # forward pass
