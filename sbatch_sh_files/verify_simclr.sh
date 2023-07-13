@@ -3,7 +3,7 @@
 #SBATCH --partition=long
 #SBATCH --gres=gpu:rtx8000:1
 #SBATCH --mem=16GB
-#SBATCH --time=3:30:00  # cifar10
+#SBATCH --time=2:00:00  # cifar10
 #####SBATCH --time=6:30:00  # stl10
 #SBATCH --cpus-per-gpu=4
 #SBATCH --output=sbatch_out/exp_track_alpha_simclr.%A.out
@@ -14,8 +14,8 @@
 module load anaconda/3
 conda activate ffcv
 
-temp=0.2
-projector_dim=256
+temp=0.1
+projector_dim=128
 
 dataset='cifar10'
 if [ $dataset = 'stl10' ]
@@ -33,7 +33,8 @@ python scripts/train_model.py --config-file configs/cc_SimCLR.yaml \
                             --training.model=$model_name \
                             --training.dataset=$dataset \
                             --training.ckpt_dir=$checkpt_dir \
-                            --training.batch_size=$batch_size
+                            --training.batch_size=$batch_size \
+			    --training.seed=42
 
 model_name=resnet50feat
 # Let's precache features, should take ~35 seconds (rtx8000)
