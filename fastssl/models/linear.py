@@ -20,6 +20,7 @@ class LinearClassifier(nn.Module):
         ckpt_epoch=None,
         feat_dim=2048,
         proj_hidden_dim=128,
+        base_width=64,
     ):
         super(LinearClassifier, self).__init__()
         # set arguments
@@ -32,6 +33,7 @@ class LinearClassifier(nn.Module):
             # define model : backbone(resnet50modified)
             self.backbone = BackBone(
                 name=self.bkey,
+                base_width=base_width,
                 dataset=self.dataset,
                 projector_dim=self.feat_dim,
                 hidden_dim=proj_hidden_dim,
