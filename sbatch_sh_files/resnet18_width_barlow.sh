@@ -13,9 +13,6 @@
 module load anaconda/3
 conda activate ffcv
 
-wandb_group='eigengroup'
-wandb_projname='modelWidth-scaling'
-
 dataset='cifar10'
 if [ $dataset = 'stl10' ]
 then
@@ -31,6 +28,14 @@ seed=$((SLURM_ARRAY_TASK_ID%SEEDS))
 lambd=0.005
 pdim=2048
 noise_level=15
+
+wandb_group='eigengroup'
+if [ $noise_level = 15 ]
+then
+    wandb_projname='modelWidth-scaling_Noise15'
+else
+    wandb_projname='modelWidth-scaling'
+fi
 
 model=resnet18proj_width${width}
 if [ $noise_level = 15 ]
