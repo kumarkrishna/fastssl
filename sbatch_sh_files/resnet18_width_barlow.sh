@@ -13,6 +13,9 @@
 module load anaconda/3
 conda activate ffcv
 
+wandb_group='eigengroup'
+wandb_projname='modelWidth-scaling'
+
 dataset='cifar10'
 if [ $dataset = 'stl10' ]
 then
@@ -42,7 +45,9 @@ python scripts/train_model_widthVary.py --config-file configs/cc_barlow_twins.ya
                     --training.lambd=$lambd --training.projector_dim=$pdim \
                     --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir \
                     --training.batch_size=$batch_size --training.model=$model \
-                    --training.seed=$seed
+                    --training.seed=$seed \
+                    --logging.use_wandb=True --logging.wandb_group=$wandb_group \
+                    --logging.wandb_project=$wandb_projname
 
 model=resnet18feat_width${width}
 if [ $noise_level = 15 ]
@@ -70,6 +75,8 @@ python scripts/train_model_widthVary.py --config-file configs/cc_classifier.yaml
                     --training.batch_size=$batch_size --training.model=$model \
                     --training.seed=$seed \
                     --training.train_dataset=${trainset}/train.beton \
-                    --training.val_dataset=${testset}/test.beton
+                    --training.val_dataset=${testset}/test.beton \
+                    --logging.use_wandb=True --logging.wandb_group=$wandb_group \
+                    --logging.wandb_project=$wandb_projname
 
 # cp $SLURM_TMPDIR/*.pth $checkpt_dir/resnet18_checkpoints/
