@@ -29,7 +29,7 @@ lambd=0.005
 pdim=2048
 noise_level=15
 
-model=resnet18proj
+model=resnet18proj_width${width}
 if [ $noise_level = 15 ]
 then
     checkpt_dir=$SCRATCH/fastssl/checkpoints_matteo_Noise15
@@ -42,9 +42,9 @@ python scripts/train_model_widthVary.py --config-file configs/cc_barlow_twins.ya
                     --training.lambd=$lambd --training.projector_dim=$pdim \
                     --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir \
                     --training.batch_size=$batch_size --training.model=$model \
-                    --training.model_base_width=$width --training.seed=$seed
+                    --training.seed=$seed
 
-model=resnet18feat
+model=resnet18feat_width${width}
 if [ $noise_level = 15 ]
 then
     trainset=/network/projects/_groups/linclab_users/ffcv/ffcv_datasets/{dataset}/Noise_15
@@ -59,7 +59,7 @@ python scripts/train_model_widthVary.py --config-file configs/cc_precache.yaml \
                     --training.lambd=$lambd --training.projector_dim=$pdim \
                     --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir \
                     --training.batch_size=$batch_size --training.model=$model \
-                    --training.model_base_width=$width --training.seed=$seed \
+                    --training.seed=$seed \
                     --training.train_dataset=${trainset}/train.beton \
                     --training.val_dataset=${testset}/test.beton
 
@@ -67,8 +67,9 @@ python scripts/train_model_widthVary.py --config-file configs/cc_precache.yaml \
 python scripts/train_model_widthVary.py --config-file configs/cc_classifier.yaml \
                     --training.lambd=$lambd --training.projector_dim=$pdim \
                     --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir \
-                    --training.model=$model --training.model_base_width=$width \
-                    --training.seed=$seed --training.train_dataset=${trainset}/train.beton \
+                    --training.batch_size=$batch_size --training.model=$model \
+                    --training.seed=$seed \
+                    --training.train_dataset=${trainset}/train.beton \
                     --training.val_dataset=${testset}/test.beton
 
 # cp $SLURM_TMPDIR/*.pth $checkpt_dir/resnet18_checkpoints/

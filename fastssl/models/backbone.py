@@ -8,18 +8,16 @@ from copy import deepcopy
 class BackBone(nn.Module):
     def __init__(self,
                  name='resnet50feat',
-                 base_width=64,
                  dataset='cifar10',
                  projector_dim=128,
                  hidden_dim=128):
         super(BackBone, self).__init__()
         self.name = name
-        self.build_backbone(base_width=base_width,
-                            dataset=dataset, 
+        self.build_backbone(dataset=dataset, 
                             projector_dim=projector_dim, 
                             hidden_dim=hidden_dim)
 
-    def build_backbone(self, base_width=64, dataset='cifar10', projector_dim=128, hidden_dim=512):
+    def build_backbone(self, dataset='cifar10', projector_dim=128, hidden_dim=512):
         """
         Build backbone model.
         """
@@ -27,6 +25,9 @@ class BackBone(nn.Module):
             self._resnet50mod(dataset)
             self.feat_dim = 2048
         elif 'resnet18' in self.name:
+            base_width = 64
+            if len(self.name.split('_width'))>1:
+                base_width = int(self.name.split('_width')[-1])
             self._resnet18mod(base_width,dataset)
             self.feat_dim = 8*base_width
         else:

@@ -80,7 +80,7 @@ class BarlowTwins(SSL):
     """
 
     def __init__(
-        self, bkey="resnet50proj", projector_dim=128, dataset="cifar10", hidden_dim=None, base_width=64,
+        self, bkey="resnet50proj", projector_dim=128, dataset="cifar10", hidden_dim=None,
     ):
         super(BarlowTwins, self).__init__()
         self.projector_dim = projector_dim
@@ -100,7 +100,6 @@ class BarlowTwins(SSL):
         )
         self.backbone = BackBone(
             name=self.bkey,
-            base_width=base_width,
             dataset=self.dataset,
             projector_dim=projector_dim,
             hidden_dim=hidden_dim,

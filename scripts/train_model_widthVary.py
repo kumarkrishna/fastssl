@@ -69,7 +69,6 @@ Section("training", "Fast CIFAR-10 training").params(
     seed=Param(int, "seed", default=1),
     algorithm=Param(str, "learning algorithm", default="ssl"),
     model=Param(str, "model to train", default="resnet50proj"),
-    model_base_width=Param(int, "base width for ResNet models", default=64),
     num_workers=Param(int, "num of CPU workers", default=4),
     projector_dim=Param(int, "projector dimension", default=128),
     hidden_dim=Param(int, "hidden dimension for BYOL projector", default=128),
@@ -186,7 +185,11 @@ def gen_ckpt_path(args, eval_args, epoch=100, prefix="exp", suffix="pth"):
         model_name = model_name.replace("feat", "")
         main_dir = os.path.join(main_dir, model_name)
         if 'resnet18' in model_name:
-            main_dir = os.path.join(main_dir, f'width{args.model_base_width}')
+            base_width = int(model_name.split('_width')[-1])
+            # replace the _width{base_width} part in model name part of main_dir
+            main_dir = main_dir.replace(f"_width{base_width}","")
+            # create a subdir with the width info
+            main_dir = os.path.join(main_dir, f'width{base_width}')
         # dir for augs during SSL pretraining
         if args.algorithm == "linear":
             dir_algorithm = eval_args.train_algorithm
@@ -255,7 +258,6 @@ def build_model(args=None):
             "bkey": training.model,
             "dataset": training.dataset,
             "projector_dim": training.projector_dim,
-            "base_width": training.model_base_width,
         }
 
         if training.algorithm in ("byol"):
@@ -279,7 +281,8 @@ def build_model(args=None):
             feat_dim = training.projector_dim
         else:
             if "resnet18" in training.model:
-                feat_dim = 8*training.model_base_width
+                base_width = int(training.model.split('_width')[-1])
+                feat_dim = 8*base_width
             else:
                 feat_dim = 2048
         model_args = {
@@ -291,7 +294,6 @@ def build_model(args=None):
             "proj_hidden_dim": training.hidden_dim
             if eval.train_algorithm in ("byol")
             else training.projector_dim,
-            "base_width": training.model_base_width,
             "num_classes": 10 if training.dataset in ["cifar10", "stl10"] else 100,
         }
         model_cls = linear.LinearClassifier
@@ -555,7 +557,7 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args):
     else:
         results = {"train_loss": [], "test_acc_1": [], "test_acc_5": []}
 
-    if args.algorithm == "linear" and args.model_base_width >= 16:
+    if args.algorithm == "linear":
         if args.use_autocast:
             with autocast():
                 activations = powerlaw.generate_activations_prelayer(
@@ -565,9 +567,12 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args):
                     use_cuda=True,
                 )
                 activations_eigen = powerlaw.get_eigenspectrum(activations)
-                alpha, ypred, R2, R2_100 = powerlaw.stringer_get_powerlaw(
-                    activations_eigen, trange=np.arange(3, 100)
-                )
+                try:
+                    alpha, ypred, R2, R2_100 = powerlaw.stringer_get_powerlaw(
+                        activations_eigen, trange=np.arange(3, 50)
+                    )
+                except:
+                    alpha, R2, R2_100 = np.nan, np.nan, np.nan
                 # debug_plot(activations_eigen,alpha,ypred,R2,R2_100,'test_full_early_{:.4f}.png'.format(args.lambd))
                 # save_path = gen_ckpt_path(args, args.algorithm, args.epochs, 'results_{}_full_early_alpha'.format(args.dataset), 'npy')
                 # np.save(save_path,dict(alpha=alpha,R2=R2,R2_100=R2_100))
