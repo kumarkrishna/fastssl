@@ -560,6 +560,8 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False):
     if args.track_alpha:
         results = {
             "train_loss": [],
+            "train_acc_1": [],
+            "train_acc_5": [],
             "test_acc_1": [],
             "test_acc_5": [],
             "eigenspectrum": [],
@@ -568,7 +570,9 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False):
             "R2_100": [],
         }
     else:
-        results = {"train_loss": [], "test_acc_1": [], "test_acc_5": []}
+        results = {"train_loss": [], 
+                   "train_acc_1": [], "train_acc_5": [], 
+                   "test_acc_1": [], "test_acc_5": []}
 
     if args.algorithm == "linear":
         if args.use_autocast:
@@ -660,6 +664,11 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False):
             )
             results["test_acc_1"].append(acc_1)
             results["test_acc_5"].append(acc_5)
+            acc_1, acc_5 = eval_step(
+                model, loaders["train"], epoch=epoch, epochs=args.epochs
+            )
+            results["train_acc_1"].append(acc_1)
+            results["train_acc_5"].append(acc_5)
         elif epoch % args.log_interval == 0:
             ckpt_path = gen_ckpt_path(args, eval_args, epoch=epoch)
             state = dict(
