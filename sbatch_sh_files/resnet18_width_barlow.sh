@@ -79,4 +79,11 @@ python scripts/train_model_widthVary.py --config-file configs/cc_classifier.yaml
                     --logging.use_wandb=True --logging.wandb_group=$wandb_group \
                     --logging.wandb_project=$wandb_projname
 
+# save precached features to checkpt_dir/feats
+if [ ! -d $checkpt_dir/feats ]
+then
+    mkdir $checkpt_dir/feats
+fi
+
+cp -r $SLURM_TMPDIR/feats/* $checkpt_dir/feats/
 # cp $SLURM_TMPDIR/*.pth $checkpt_dir/resnet18_checkpoints/
