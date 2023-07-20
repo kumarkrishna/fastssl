@@ -190,7 +190,7 @@ def gen_ckpt_path(args, eval_args, epoch=100, prefix="exp", suffix="pth"):
     else:
         if "precache" in prefix:
             # save precache features/embeddings in $SLURM_TMPDIR
-            main_dir = os.environ["SLURM_TMPDIR"]
+            main_dir = os.path.join(os.environ["SLURM_TMPDIR"],'feats')
         else:
             main_dir = args.ckpt_dir
         model_name = args.model
