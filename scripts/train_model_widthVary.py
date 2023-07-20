@@ -847,6 +847,9 @@ if __name__ == "__main__":
     logging_modelname = args.training.model
     logging_modelname = logging_modelname.replace("proj", "")
     logging_modelname = logging_modelname.replace("feat", "")
+    logging_jobtype = args.training.algorithm
+    if logging_jobtype == 'linear':
+        logging_jobtype = f'{args.eval.train_algorithm}_{logging_jobtype}'
     if args.logging.use_wandb:
         start_wandb_server(train_config_dict=args.training.__dict__,
                            eval_config_dict=args.eval.__dict__,
@@ -856,7 +859,7 @@ if __name__ == "__main__":
                                     f'{args.training.algorithm}_' +\
                                     f'{args.training.seed}',
                            exp_group=f'{logging_modelname}',
-                           exp_job_type=f'{args.training.algorithm}'
+                           exp_job_type=f'{logging_jobtype}'
                            )
 
     # train model

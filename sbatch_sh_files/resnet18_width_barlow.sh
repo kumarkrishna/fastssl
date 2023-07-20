@@ -30,18 +30,14 @@ pdim=2048
 noise_level=15
 
 wandb_group='eigengroup'
-if [ $noise_level = 15 ]
-then
-    wandb_projname='modelWidth-scaling_Noise15'
-else
-    wandb_projname='modelWidth-scaling'
-fi
 
 model=resnet18proj_width${width}
 if [ $noise_level = 15 ]
 then
+    wandb_projname='modelWidth-scaling_Noise15'
     checkpt_dir=$SCRATCH/fastssl/checkpoints_matteo_Noise15
 else
+    wandb_projname='modelWidth-scaling'
     checkpt_dir=$SCRATCH/fastssl/checkpoints_matteo
 fi
 
