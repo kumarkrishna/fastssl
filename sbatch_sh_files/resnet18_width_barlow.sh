@@ -27,7 +27,6 @@ width=$((1+SLURM_ARRAY_TASK_ID/SEEDS))
 seed=$((SLURM_ARRAY_TASK_ID%SEEDS))
 lambd=0.005
 pdim=2048
-noise_level=15
 
 wandb_group='eigengroup'
 
