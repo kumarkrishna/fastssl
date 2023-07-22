@@ -294,8 +294,19 @@ def build_model(args=None):
             feat_dim = training.projector_dim
         else:
             if "resnet18" in training.model:
-                base_width = int(training.model.split('_width')[-1])
+                try:
+                    assert len(training.model.split('_width'))>1
+                    base_width = int(training.model.split('_width')[-1])
+                except:
+                    base_width = 64
                 feat_dim = 8*base_width
+            elif "resnet50" in training.model:
+                try:
+                    assert len(training.model.split('_width'))>1
+                    base_width = int(training.model.split('_width')[-1])
+                except:
+                    base_width = 64
+                feat_dim = 32*base_width
             else:
                 feat_dim = 2048
         model_args = {
