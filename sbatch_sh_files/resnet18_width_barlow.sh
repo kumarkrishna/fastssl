@@ -12,6 +12,7 @@
 . /etc/profile
 module load anaconda/3
 conda activate ffcv
+WANDB__SERVICE_WAIT=300
 
 dataset='cifar10'
 if [ $dataset = 'stl10' ]
