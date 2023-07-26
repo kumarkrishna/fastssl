@@ -3,6 +3,7 @@ from torchvision.models.resnet import resnet50
 import numpy as np
 import torch
 from copy import deepcopy
+from fastssl.models.resnets import ResNet18, ResNet50
 
 class BackBone(nn.Module):
     def __init__(self,
@@ -20,8 +21,19 @@ class BackBone(nn.Module):
         """
         Build backbone model.
         """
-        if 'resnet' in self.name:
-            self._resnet50mod(dataset)
+        if 'resnet50' in self.name:
+            base_width = 64
+            if len(self.name.split('_width'))>1:
+                base_width = int(self.name.split('_width')[-1])
+            self._resnet50mod(base_width, dataset)
+            # self.feat_dim = 2048
+            self.feat_dim = 32*base_width
+        elif 'resnet18' in self.name:
+            base_width = 64
+            if len(self.name.split('_width'))>1:
+                base_width = int(self.name.split('_width')[-1])
+            self._resnet18mod(base_width, dataset)
+            self.feat_dim = 8*base_width
         else:
             num_layers = int(self.name.split('_')[-1]) if len(self.name.split('_'))>1 else 2
             self.name = self.name.split('_')[0] if len(self.name.split('_'))>1 else self.name
@@ -29,17 +41,33 @@ class BackBone(nn.Module):
                 self._shallowConvDualmod(dataset, layers=num_layers)
             else:
                 self._shallowConvmod(dataset,layers=num_layers)
+            self.feat_dim = 2048
         if 'proj' in self.name:
             self.build_projector(projector_dim=projector_dim, hidden_dim=hidden_dim)
         if 'pred' in self.name:
             self.build_predictor(projector_dim=projector_dim)
 
-    def _resnet50mod(self, dataset):
+    def _resnet50mod(self, base_width, dataset):
         backbone = []
-        for name, module in resnet50().named_children():
+        # for name, module in resnet50().named_children():
+        for name, module in ResNet50(width=base_width).named_children():
             if name == 'conv1':
                 module = nn.Conv2d(
-                    3, 64, kernel_size=3, stride=1,
+                    # 3, 64, kernel_size=3, stride=1,
+                    3, base_width, kernel_size=3, stride=1,
+                    padding=1, bias=False
+                )
+            # check validity for adding layer to module
+            if self.is_valid_layer(module, dataset):
+                backbone.append(module)
+        self.feats = nn.Sequential(*backbone)
+
+    def _resnet18mod(self, base_width, dataset):
+        backbone = []
+        for name, module in ResNet18(width=base_width).named_children():
+            if name == 'conv1':
+                module = nn.Conv2d(
+                    3, base_width, kernel_size=3, stride=1,
                     padding=1, bias=False
                 )
             # check validity for adding layer to module
@@ -115,7 +143,7 @@ class BackBone(nn.Module):
 
     def build_projector(self, projector_dim, hidden_dim):
         projector = [
-            nn.Linear(2048, hidden_dim, bias=False),
+            nn.Linear(self.feat_dim, hidden_dim, bias=False),
             nn.BatchNorm1d(hidden_dim),
             nn.ReLU(inplace=True),
             nn.Linear(hidden_dim, projector_dim, bias=True),
