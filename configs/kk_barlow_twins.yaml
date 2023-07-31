@@ -1,0 +1,18 @@
+training:
+  dataset: 'cifar10'
+  datadir: '/wynton/protected/home/yala/agrawalk/data/fastssl/datasets/{dataset}.var/{dataset}_torchvision/'
+  ckpt_dir: '/wynton/protected/home/yala/agrawalk/data/fastssl/exp/0729_001'
+  train_dataset: '/wynton/protected/home/yala/agrawalk/data/fastssl/ffcv_datasets/{dataset}/train.beton'
+  val_dataset: '/wynton/protected/home/yala/agrawalk/data/fastssl/ffcv_datasets/{dataset}/test.beton'
+  batch_size: 512
+  epochs: 100
+  lambd: 0.0078125
+  projector_dim: 128
+  seed: 42
+  algorithm: 'ssl'
+  model: 'resnet50proj'
+  num_workers: 4
+  ckpt_dir: 'checkpoints'
+  use_autocast: True
+  log_interval: 100
+  num_augmentations: 2
