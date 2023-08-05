@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#SBATCH --array=0-35%36
+#SBATCH --array=0-71%36
 #SBATCH --partition=long
 #SBATCH --gres=gpu:rtx8000:1
 #SBATCH --mem=16GB
@@ -15,12 +15,11 @@ conda activate ffcv_new
 
 lambd_arr=(0.001 0.004 0.008 0.01 0.02 0.05)
 pdim_arr=(1024 2048 3072)
-# augs_arr=(2 4 8 16)
-augs_arr=(8 16)
+augs_arr=(2 4 8 16)
 dataset='cifar10'
 if [ $dataset = 'stl10' ]
 then
-    batch_size=256
+    batch_size=64
 else
     batch_size=128
 fi
@@ -37,11 +36,11 @@ pdim=${pdim_arr[$pidx]}
 augs=${augs_arr[$aidx]}
 
 wandb_group='blake-richards'
-wandb_projname='multiPatch-Barlow'
+wandb_projname='multiPatch-Barlow-v2'
 
 model=resnet50proj
 
-checkpt_dir=$SCRATCH/fastssl/checkpoints_mp
+checkpt_dir=$SCRATCH/fastssl/checkpoints_mp_v2
 
 train_dpath=$SCRATCH/ffcv/ffcv_datasets/{dataset}/train.beton
 val_dpath=$SCRATCH/ffcv/ffcv_datasets/{dataset}/test.beton

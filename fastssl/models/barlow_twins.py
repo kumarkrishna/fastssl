@@ -58,19 +58,34 @@ def BarlowTwinLoss(model, inp, _lambda=None):
     off_diag = 0.0
     # compute sum across all patches of each image for each embedding dim
     z_norm_sum = torch.sum(torch.stack(z_norm_list), dim=0)
-    for i in range(num_augs):
-        # take embedding of one patch
-        z1_norm = z_norm_list[i]
-        # take mean embedding of all other patches
-        z2_norm = (z_norm_sum - z_norm_list[i]) / (num_augs - 1)
-        # compute BarlowTwins loss for each such pairing
-        c = torch.mm(z1_norm.T, z2_norm) / bsz  # DxD
+    # for i in range(num_augs):
+    #     # take embedding of one patch
+    #     z1_norm = z_norm_list[i]
+    #     # take mean embedding of all other patches
+    #     z2_norm = (z_norm_sum - z_norm_list[i]) / (num_augs - 1)
+    #     # compute BarlowTwins loss for each such pairing
+    #     c = torch.mm(z1_norm.T, z2_norm) / bsz  # DxD
 
-        # take sum across all patches
-        on_diag += torch.diagonal(c).add_(-1).pow_(2).sum()
-        off_diag += off_diagonal(c).pow_(2).sum()
+    #     # take sum across all patches
+    #     on_diag += torch.diagonal(c).add_(-1).pow_(2).sum()
+    #     off_diag += off_diagonal(c).pow_(2).sum()
+    # # return average across all patches as the final loss
+    # loss = (on_diag + _lambda * off_diag) / num_augs
+
+    i = 0
+    # take embedding of one patch
+    z1_norm = z_norm_list[i]
+    # take mean embedding of all other patches
+    z2_norm = (z_norm_sum - z_norm_list[i]) / (num_augs - 1)
+    # compute BarlowTwins loss for each such pairing
+    c = torch.mm(z1_norm.T, z2_norm) / bsz  # DxD
+
+    # take sum across all patches
+    on_diag += torch.diagonal(c).add_(-1).pow_(2).sum()
+    off_diag += off_diagonal(c).pow_(2).sum()
     # return average across all patches as the final loss
-    loss = (on_diag + _lambda * off_diag) / num_augs
+    loss = (on_diag + _lambda * off_diag)
+    
     return loss
 
 
