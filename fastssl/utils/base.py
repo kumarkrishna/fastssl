@@ -57,6 +57,7 @@ def start_wandb_server(train_config_dict: dict,
                    name=exp_name,
                    group=exp_group,
                    job_type=exp_job_type,
+                   settings=wandb.Settings(_service_wait=150)
                    )
     except Exception as error:
         print(f"Error in wandb init, see: {error}")
