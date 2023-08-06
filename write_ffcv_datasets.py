@@ -25,18 +25,16 @@ write_dataset = True
 dataset = "cifar10"
 download = True
 
-BASEPATH='/wynton/protected/home/yala/agrawalk/data/fastssl'
+BASEPATH='/scratch/krishna/data/fastssl'
 if dataset == "cifar100":
     dataset_folder = f"{BASEPATH}/datasets/cifar100.var/cifar100_torchvision/"
     ffcv_folder = f"{BASEPATH}/ffcv_datasets/cifar100"
 elif dataset == "stl10":
     dataset_folder = f"{BASEPATH}/datasets/stl10.var/stl10_torchvision/"
     ffcv_folder = f"{BASEPATH}/ffcv_datasets/stl10"
-
 elif dataset == "cifar10":
     dataset_folder = f"{BASEPATH}/datasets/cifar10.var/cifar10_torchvision/"
     ffcv_folder = f"{BASEPATH}/ffcv_datasets/cifar10"
-
 
 if dataset == "cifar100":
     trainset = torchvision.datasets.CIFAR100(
