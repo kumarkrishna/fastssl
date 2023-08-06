@@ -18,15 +18,14 @@ def off_diagonal(x):
 
 
 class SmaLRLoss(nn.Module):
-    def __init__(self, ncloss_type="sp", closs_type="mf", lambd=5e-3, **extra_kwargs):
+    def __init__(self, ncloss_type="sp", closs_type="mf", hypersphere_radius=1.0, temperature=1.0, num_patches=2, lambd=5e-3, **extra_kwargs):
         super().__init__()
         self.ncloss_type = ncloss_type
         self.closs_type = closs_type
         self.lambd = lambd
-
-        self.num_patches = extra_kwargs.get("num_patches", 4)   
-        self.hypersphere_radius = extra_kwargs.get("hypersphere_radius", 1.0)
-        self.temperature = extra_kwargs.get("temperature", 0.1)
+        self.temperature = temperature
+        self.num_patches = num_patches
+        self.hypersphere_radius = hypersphere_radius
 
         # build the loss functions
         closs_dict = {

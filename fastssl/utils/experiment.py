@@ -231,6 +231,7 @@ class Experiment:
         loss_fn_kwargs = {
             "temperature": self.config.train.temperature,
             "lambd": self.config.train.lambd,
+            "num_patches": self.config.train.num_augmentations,
             "label_smoothing_coeff": self.config.train.label_smoothing_coeff
         }
         self.loss_fn = models.__dict__[self.config.train.loss_fn_type](**loss_fn_kwargs)
@@ -266,10 +267,10 @@ class Experiment:
             loss.backward()
             self.optimizer.step()
         
-        return loss
+        return loss_dict
 
     def train_step(self, epoch=0):
-        total_loss, num_batches = 0.0, 0
+        total_loss_dict, num_batches = {}, 0
         train_bar = tqdm(self.dataloaders["train"], desc="Train")
 
         self.model.train()
@@ -286,9 +287,12 @@ class Experiment:
             # clean up for backward pass
             self.optimizer.zero_grad()
             # forward pass
-            loss = self.forward(sample)
-            # logging
-            total_loss += loss.item()
+            loss_dict = self.forward(sample)
+            for k, v in loss_dict.items():
+                if k not in total_loss_dict:
+                    total_loss_dict[k] = 0.0
+                total_loss_dict[k] += v.item()
+
             num_batches += 1
 
             if self.config.train.algorithm == "BYOL":
@@ -297,10 +301,13 @@ class Experiment:
 
             train_bar.set_description(
                 "Train Epoch: [{}/{}] Loss: {:.4f}".format(
-                epoch, self.config.train.epochs, total_loss / num_batches
+                epoch, self.config.train.epochs, total_loss_dict['loss'] / num_batches
                 )
             )
-        return total_loss / num_batches
+        for k, v in total_loss_dict.items():
+            total_loss_dict[k] /= num_batches
+        
+        return total_loss_dict
 
     def valid_step(self, epoch=0):
         self.model.eval()
@@ -326,10 +333,27 @@ class Experiment:
                 )
             )
         return acc_1, acc_5
+    
+    def maybe_track_alpha(self, epoch=0):
+        if self.config.train.track_alpha:
+            self.logger.info("Tracking alpha")
+            activations = powerlaw.generate_activations_prelayer(
+                net=self.model,
+                layer=self.model.backbone.proj, 
+                data_loader=self.dataloaders["test"],
+                use_cuda=True)
+            eigenspectrum = powerlaw.get_eigenspectrum(activations)
+            alpha, ypred, R2, R2_100 = powerlaw.stringer_get_powerlaw(
+                eigenspectrum, trange=np.arange(3, 100))
+            metrics = {"alpha": alpha, "eigenspectrum": eigenspectrum, "R2": R2, "R2_100": R2_100}
+            return metrics
+        else:
+            return None
+
 
     def train(self):
         # how to track metrics
-        metrics = {"train_loss": [], "test_acc_1": [], "test_acc_5": []}
+        metrics = {"loss": [], "test_acc_1": [], "test_acc_5": []}
         if self.config.train.track_alpha:
             metrics.update({"alpha": [], "eigenspectrum": [], "R2": [], "R2_100": []})
         
@@ -342,11 +366,28 @@ class Experiment:
         
         self.timer.start()
         # run training 
+        eigenmetrics = self.maybe_track_alpha(epoch=0)
+        # TODO(krishna): cleaner interface for eigenmetrics
+        if eigenmetrics:
+            for key in eigenmetrics:
+                metrics[key].append(eigenmetrics[key])
+
         for epoch in range(1, self.config.train.epochs + 1):
-            train_loss = self.train_step(epoch)
-            metrics["train_loss"].append(train_loss)
+            # collect loss and metrics for logging
+            loss_dict = self.train_step(epoch)
+            for key in loss_dict:
+                if key not in metrics:
+                    metrics[key] = []
+                metrics[key].append(loss_dict[key])
 
             if epoch % self.config.train.log_interval == 0:
+                # tracking alpha
+                self.maybe_track_alpha(epoch=epoch)
+                if eigenmetrics:
+                    for key in eigenmetrics:
+                        metrics[key].append(eigenmetrics[key])
+
+                # save model
                 ckpt_path = self.saver.get_save_path(epoch=epoch)
                 state = dict(
                     epoch=epoch + 1,
