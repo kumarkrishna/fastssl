@@ -5,7 +5,7 @@ train:
   train_dataset: /scratch/krishna/data/fastssl/ffcv_datasets/{dataset}/train.beton
   valid_dataset: /scratch/krishna/data/fastssl/ffcv_datasets/{dataset}/test.beton
   ## logging
-  ckpt_dir: /home/krishna/logs/fastssl/exp/0804_smalr_v0.1_080401
+  ckpt_dir: /home/krishna/logs/fastssl/exp/0804_smalrAug8_v0.1_080401
   ## training hparams
   batch_size: 512
   epochs: 100
@@ -17,13 +17,13 @@ train:
   model: resnet50proj
   model_type: SmaLR
   loss_fn_type: SmaLRLoss
-  num_augmentations: 4
+  num_augmentations: 8
   # model architecture
   hidden_dim: 256
   projector_dim: 256
   # system
   seed: 42
-  num_workers: 4
+  num_workers: 6
   use_autocast: True
   log_interval: 1
   # optimizer
@@ -33,7 +33,7 @@ train:
 valid:
   epoch: 100
   use_precache: False
-  num_augmentations_pretrain: 4
+  num_augmentations_pretrain: 8
   algorithm: linear
 logging:
   use_wandb: True

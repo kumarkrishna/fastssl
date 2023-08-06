@@ -374,7 +374,7 @@ class Experiment:
             stop_wandb_server()
 
     def save_info(self, info):
-        save_path = self.get_save_path()
+        save_path = self.saver.get_save_path()
         np.save(save_path, info)
         self.logger.info(f"Saved info to {save_path}")
 
