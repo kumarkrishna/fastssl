@@ -17,61 +17,67 @@ def off_diagonal(x):
     return x.flatten()[:-1].view(n - 1, n + 1)[:, 1:].flatten()
 
 
-def BarlowTwinLoss(model, inp, _lambda=None):
-    """
-    Peform model forward pass and compute the BarlowTwin loss.
+class BarlowTwinsLoss(nn.Module):
+    def __init__(self, lambd=5e-3, **extra_kwargs):
+        super().__init__()
+        self.lambd = lambd
+    
+    def __call__(self, model, inp):
+        """
+        Peform model forward pass and compute the BarlowTwin loss.
 
-    Args:
-        model: a torch.nn.Module
-        inp: a torch.Tensor
-        _lambda: a float
-    Returns:
-        loss: scalar tensor
-    """
+        Args:
+            model: a torch.nn.Module
+            inp: a torch.Tensor
+            _lambda: a float
+        Returns:
+            loss: scalar tensor
+        """
 
-    # generate samples from tuple
-    inp = list(inp)
-    _ = inp.pop(1)
-    num_augs = len(inp)
-    for x in inp:
-        x = x.cuda(non_blocking=True)
-    # (x1, x2), _ = inp
-    # x1, x2 = x1.cuda(non_blocking=True), x2.cuda(non_blocking=True)
-    # x1, x2 = TransformGPU(x1, x2)
+        # generate samples from tuple
+        inp = list(inp)
+        _ = inp.pop(1)
+        num_augs = len(inp)
+        inp = [x.cuda(non_blocking=True) for x in inp]
+        # for x in inp:
+        #     x = x.cuda(non_blocking=True)
+        # (x1, x2), _ = inp
+        # x1, x2 = x1.cuda(non_blocking=True), x2.cuda(non_blocking=True)
+        # x1, x2 = TransformGPU(x1, x2)
 
-    bsz = inp[0].shape[0]
-    # bsz = x1.shape[0]
-    # x,_ = inp
-    # x1,x2 = ssl_transform(x.cuda(non_blocking=True))
-    # bsz = x1.shape[0]
+        bsz = inp[0].shape[0]
+        # bsz = x1.shape[0]
+        # x,_ = inp
+        # x1,x2 = ssl_transform(x.cuda(non_blocking=True))
+        # bsz = x1.shape[0]
 
-    # forward pass
-    z_list = [model(x) for x in inp]
-    # z1 = model(x1)
-    # z2 = model(x2)
+        # forward pass
+        z_list = [model(x) for x in inp]
+        # z1 = model(x1)
+        # z2 = model(x2)
 
-    z_norm_list = [(z - z.mean(0)) / z.std(0) for z in z_list]
-    # z1_norm = (z1 - z1.mean(0)) / z1.std(0) # NxD
-    # z2_norm = (z2 - z2.mean(0)) / z2.std(0) # NxD
+        z_norm_list = [(z - z.mean(0)) / z.std(0) for z in z_list]
+        # z1_norm = (z1 - z1.mean(0)) / z1.std(0) # NxD
+        # z2_norm = (z2 - z2.mean(0)) / z2.std(0) # NxD
 
-    on_diag = 0.0
-    off_diag = 0.0
-    # compute sum across all patches of each image for each embedding dim
-    z_norm_sum = torch.sum(torch.stack(z_norm_list), dim=0)
-    for i in range(num_augs):
-        # take embedding of one patch
-        z1_norm = z_norm_list[i]
-        # take mean embedding of all other patches
-        z2_norm = (z_norm_sum - z_norm_list[i]) / (num_augs - 1)
-        # compute BarlowTwins loss for each such pairing
-        c = torch.mm(z1_norm.T, z2_norm) / bsz  # DxD
+        on_diag = 0.0
+        off_diag = 0.0
+        # compute sum across all patches of each image for each embedding dim
+        z_norm_sum = torch.sum(torch.stack(z_norm_list), dim=0)
+        for i in range(num_augs):
+            # take embedding of one patch
+            z1_norm = z_norm_list[i]
+            # take mean embedding of all other patches
+            z2_norm = (z_norm_sum - z_norm_list[i]) / (num_augs - 1)
+            # compute BarlowTwins loss for each such pairing
+            c = torch.mm(z1_norm.T, z2_norm) / bsz  # DxD
 
-        # take sum across all patches
-        on_diag += torch.diagonal(c).add_(-1).pow_(2).sum()
-        off_diag += off_diagonal(c).pow_(2).sum()
-    # return average across all patches as the final loss
-    loss = (on_diag + _lambda * off_diag) / num_augs
-    return loss
+            # take sum across all patches
+            on_diag += torch.diagonal(c).add_(-1).pow_(2).sum()
+            off_diag += off_diagonal(c).pow_(2).sum()
+        # return average across all patches as the final loss
+        loss = (on_diag + self.lambd * off_diag) / num_augs
+        return loss
 
 
 class BarlowTwins(SSL):
@@ -80,7 +86,7 @@ class BarlowTwins(SSL):
     """
 
     def __init__(
-        self, bkey="resnet50proj", projector_dim=128, dataset="cifar10", hidden_dim=None
+        self, bkey="resnet50proj", projector_dim=128, dataset="cifar10", hidden_dim=None, **extra_kwargs
     ):
         super(BarlowTwins, self).__init__()
         self.projector_dim = projector_dim

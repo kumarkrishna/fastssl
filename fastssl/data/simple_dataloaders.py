@@ -15,7 +15,7 @@ class SimpleDataset(Dataset):
     def __getitem__(self,idx):
         return self.x[idx], self.y[idx]
     
-def simple_dataloader(fname_train,
+def precache_dataloader(fname_train,
                      fname_test,
                      splits=['train','test'],
                      batch_size=512,

@@ -4,10 +4,34 @@ Train *better* models *faster* with optimized SSL pipelines.
 
 ### Installation
 
-To install and using this library use the following command: 
+```
+git clone git@github.com:facebookresearch/FFCV-SSL.git
+cd FFCV-SSL
+conda create -y -n ffcv-ssl python=3.9 cupy pkg-config compilers libjpeg-turbo opencv pytorch torchvision torchaudio pytorch-cuda=11.7 numba -c pytorch -c nvidia -c conda-forge
+conda activate ffcv-ssl
+pip install -e . -r requirements.txt
+```
 
-```pip install -r requirements.txt -e .```
+## Training
 
+### Train Model from Scratch
+
+barlow twins
+```
+python scripts/trainer.py --config-file configs/barlow_twins.yaml
+```
+
+### Evaluate pretrained model from checkpoint
+
+```
+python scripts/trainer.py --config-file configs/eval_barlow_twins.yaml
+```
+
+
+
+
+TO BE DEPRECATED
+================
 
 ### Training Models
 

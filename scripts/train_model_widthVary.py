@@ -42,7 +42,7 @@ from fastssl.data import (
     stl_ffcv,
     stl10_pt,
     stl_classifier_ffcv,
-    simple_dataloader,
+    precache_dataloader,
 )
 from fastssl.models import barlow_twins as bt
 from fastssl.models import linear, byol, simclr
@@ -119,7 +119,7 @@ def build_dataloaders(
     if os.path.splitext(train_dataset)[-1] == ".npy":
         # using precached features!!
         print("Using simple dataloader")
-        return simple_dataloader(
+        return precache_dataloader(
             train_dataset, val_dataset, batch_size=batch_size, num_workers=num_workers
         )
     if "cifar" in dataset:
