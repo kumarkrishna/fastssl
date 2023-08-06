@@ -23,6 +23,7 @@ from torch import optim
 from torch.cuda.amp import autocast
 
 from fastssl.utils.base import set_seeds, get_args_from_config, merge_with_args
+from fastssl.utils.base import start_wandb_server, stop_wandb_server, log_wandb
 from fastssl.utils import powerlaw, Saver, Timer
 from fastssl.data import DATALOADER_REGISTRY, precache_dataloader
 from fastssl import models
@@ -60,6 +61,30 @@ class Experiment:
         self.saver = Saver(self.config)
         # build timer
         self.timer = Timer()
+
+        # setup wandb
+        modelidx = self.config.train.model.replace("proj", "").replace("feat", "")
+        algoidx = self.config.valid.algorithm if self.config.train.mode == 'eval' else self.config.train.algorithm
+        if self.config.train.mode == 'eval':
+            exp_job_type = f'{self.config.train.algorithm}_{self.config.valid.algorithm}'
+        else:
+            exp_job_type = self.config.train.algorithm
+
+        if self.config.logging.use_wandb:
+            start_wandb_server(
+                    train_config_dict=self.config.train.__dict__,
+                    eval_config_dict=self.config.valid.__dict__,
+                    wandb_group=self.config.logging.wandb_group,
+                    wandb_project=self.config.logging.wandb_project,
+                    exp_name='{}_{}_{}'.format(
+                        modelidx,
+                        algoidx,
+                        self.config.train.seed
+                        ),
+                    exp_group=f'{modelidx}',
+                    exp_job_type=f'{exp_job_type}'
+                    )
+
 
     def maybe_use_precache_features(self):
         if os.path.splitext(self.config.train.train_dataset)[-1] == ".npy":
@@ -329,6 +354,8 @@ class Experiment:
                     optimizer=self.optimizer.state_dict(),
                 )
                 torch.save(state, ckpt_path)
+            if self.config.logging.use_wandb:
+                log_wandb(metrics)
         self.timer.end()
 
         self.logger.info("Training complete")
@@ -341,6 +368,10 @@ class Experiment:
         if mode == "train":
             metrics = self.train()
             self.save_info(metrics)
+
+    def stop(self):
+        if self.config.logging.use_wandb:
+            stop_wandb_server()
 
     def save_info(self, info):
         save_path = self.get_save_path()

@@ -72,12 +72,18 @@ Section("valid", "Fast CIFAR-10 evaluation").params(
     ),
 )
 
+Section("logging", "Logging").params(
+        use_wandb=Param(bool, "Use wandb to log results", default=False),
+        wandb_group=Param(str, "Wandb team to log run", default="eigengroup"),
+        wandb_project=Param(str, "Wandb project to log run", default="fastssl"))
+
+
 
 def main(args):
     # build an experiment
     experiment = Experiment(args)
     experiment.run(mode="train")
-
+    experiment.stop()
 
 if __name__ == "__main__":
     args = get_args_from_config()
@@ -88,5 +94,4 @@ if __name__ == "__main__":
     args.train.valid_dataset = args.train.valid_dataset.format(
         dataset=args.train.dataset
     )
-    breakpoint()
     main(args)

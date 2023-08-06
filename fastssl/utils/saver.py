@@ -2,15 +2,16 @@ import os
 from pathlib import Path
 
 class Saver:
-    def __init__(self, config, template="{}{}{}{}.{}"):
+    def __init__(self, config, template="{}_{}_{}.{}"):
         self.config = config
         self.template = template
+        os.makedirs(self.config.train.ckpt_dir, exist_ok=True)
     
     def get_save_path(self, prefix="exp", suffix="pth", epoch=100):
         if suffix == "pth":
-            ckpt_dir, ckpt_path = self._get_pth_save_path(prefix=prefix, epoch=epoch)
+            ckpt_dir, ckpt_path = self._get_pth_save_path(epoch=epoch, prefix=prefix)
         elif suffix == "npy":
-            ckpt_dir, ckpt_path = self._get_npy_save_path(epoch=epoch)
+            ckpt_dir, ckpt_path = self._get_npy_save_path(epoch=epoch, prefix=prefix)
         
         Path(ckpt_dir).mkdir(parents=True, exist_ok=True)
         return ckpt_path
@@ -20,11 +21,11 @@ class Saver:
         ckpt_path = os.path.join(
             ckpt_dir,
             self.template.format(
-            self.prefix,
-            self.config.valid.train_algorithm if "linear" in self.train.algorithm else self.config.train.algorithm,
+            prefix,
+            self.config.valid.algorithm if self.config.train.mode == 'eval' else self.config.train.algorithm,
             epoch, "pth")
         )
-        return ckpt_path
+        return ckpt_dir, ckpt_path
 
     def _get_npy_save_path(self, prefix="exp", epoch=100):
         main_dir = os.environ.get("SLURM_TMPDIR", self.config.train.save_dir) if "precache" in prefix else self.config.train.save_dir
