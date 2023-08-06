@@ -1,11 +1,11 @@
 train:
   ## dataset
   dataset: cifar10
-  datadir: '/wynton/protected/home/yala/agrawalk/data/fastssl/datasets/{dataset}.var/{dataset}_torchvision/'
-  train_dataset: '/wynton/protected/home/yala/agrawalk/data/fastssl/ffcv_datasets/{dataset}/train.beton'
-  valid_dataset: '/wynton/protected/home/yala/agrawalk/data/fastssl/ffcv_datasets/{dataset}/test.beton'
+  datadir: /home/krishna/data/fastssl/datasets/{dataset}.var/{dataset}_torchvision/
+  train_dataset: /home/krishna/data/fastssl/ffcv_datasets/{dataset}/train.beton
+  valid_dataset: /home/krishna/data/fastssl/ffcv_datasets/{dataset}/test.beton
   ## logging
-  ckpt_dir: '/wynton/protected/home/yala/agrawalk/data/fastssl/exp/0804_smalr_v0.1_080401'
+  ckpt_dir: /home/krishna/data/fastssl/exp/0804_smalr_v0.1_080401
   ## training hparams
   batch_size: 512
   epochs: 100
