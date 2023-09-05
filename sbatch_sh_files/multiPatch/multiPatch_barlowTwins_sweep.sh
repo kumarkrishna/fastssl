@@ -36,11 +36,11 @@ pdim=${pdim_arr[$pidx]}
 augs=${augs_arr[$aidx]}
 
 wandb_group='blake-richards'
-wandb_projname='multiPatch-Barlow-v2'
+wandb_projname='multiPatch-Barlow-v3'
 
 model=resnet50proj
 
-checkpt_dir=$SCRATCH/fastssl/checkpoints_mp_v2
+checkpt_dir=$SCRATCH/fastssl/checkpoints_mp_v3
 
 train_dpath=$SCRATCH/ffcv/ffcv_datasets/{dataset}/train.beton
 val_dpath=$SCRATCH/ffcv/ffcv_datasets/{dataset}/test.beton
