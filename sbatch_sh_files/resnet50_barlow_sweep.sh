@@ -11,7 +11,7 @@
 
 . /etc/profile
 module load anaconda/3
-conda activate ffcv
+conda activate ffcv_new
 
 lambd_arr=(0.001 0.002 0.004 0.008 0.01 0.02 0.04 0.08)
 pdim_arr=(512 1024 2048 3072)
