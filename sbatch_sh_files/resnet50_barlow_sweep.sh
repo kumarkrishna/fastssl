@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#SBATCH --array=0-31%16
+#SBATCH --array=0-89%20
 #SBATCH --partition=long
 #SBATCH --gres=gpu:rtx8000:1
 #SBATCH --mem=16GB
@@ -13,8 +13,8 @@
 module load anaconda/3
 conda activate ffcv_new
 
-lambd_arr=(0.001 0.002 0.004 0.008 0.01 0.02 0.04 0.08)
-pdim_arr=(512 1024 2048 3072)
+lambd_arr=(0.0001 0.0002 0.0004 0.0008 0.001 0.002 0.004 0.006 0.01 0.02)
+pdim_arr=(256 512 768 1024 1536 2048 2304 2560 3072)
 dataset='cifar10'
 if [ $dataset = 'stl10' ]
 then

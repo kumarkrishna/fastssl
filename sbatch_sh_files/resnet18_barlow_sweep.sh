@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#SBATCH --array=0-14%15
+#SBATCH --array=0-89%25
 #SBATCH --partition=long
 #SBATCH --gres=gpu:rtx8000:1
 #SBATCH --mem=16GB
@@ -11,10 +11,10 @@
 
 . /etc/profile
 module load anaconda/3
-conda activate ffcv
+conda activate ffcv_new
 
-lambd_arr=(0.001 0.005 0.01 0.05 0.1)
-pdim_arr=(512 1024 2048)
+lambd_arr=(0.0001 0.0002 0.0004 0.0008 0.001 0.002 0.004 0.006 0.01 0.02)
+pdim_arr=(256 512 768 1024 1536 2048 2304 2560 3072)
 dataset='cifar10'
 if [ $dataset = 'stl10' ]
 then
@@ -29,30 +29,38 @@ lidx=$((SLURM_ARRAY_TASK_ID%lenL))
 lambd=${lambd_arr[$lidx]}
 pdim=${pdim_arr[$pidx]}
 
-model=resnet18proj
-checkpt_dir=$SCRATCH/fastssl/checkpoints
+wandb_group='blake-richards'
+wandb_projname='BarlowTwins-resnet18-hparam'
+
+width=64
+model=resnet18proj_width${width}
+checkpt_dir=$SCRATCH/fastssl/checkpoints_matteo
+
 
 # Let's train a SSL (BarlowTwins) model with the above hyperparams
-python scripts/train_model.py --config-file configs/cc_barlow_twins.yaml \
+python scripts/train_model_widthVary.py --config-file configs/cc_barlow_twins.yaml \
                 --training.lambd=$lambd --training.projector_dim=$pdim \
                 --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir \
-                --training.batch_size=$batch_size --training.model=$model
+                --training.batch_size=$batch_size --training.model=$model \
+                --logging.use_wandb=True --logging.wandb_group=$wandb_group \
+                --logging.wandb_project=$wandb_projname
 
-model=resnet18feat
+model=resnet18feat_width${width}
 # Let's precache features, should take ~35 seconds (rtx8000)
-python scripts/train_model.py --config-file configs/cc_precache.yaml \
+python scripts/train_model_widthVary.py --config-file configs/cc_precache.yaml \
                 --training.lambd=$lambd --training.projector_dim=$pdim \
                 --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir \
                 --training.batch_size=$batch_size --training.model=$model
-# Let's precache embeddings, should take ~35 seconds (rtx8000)
-# python scripts/train_model.py --config-file configs/cc_precache.yaml --training.lambd=$lambd --training.projector_dim=$pdim --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir --training.batch_size=$batch_size --training.model=resnet50proj
 
 # run linear eval on precached features from model: using default seed 42
-python scripts/train_model.py --config-file configs/cc_classifier.yaml \
+python scripts/train_model_widthVary.py --config-file configs/cc_classifier.yaml \
                 --training.lambd=$lambd --training.projector_dim=$pdim \
                 --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir \
-                --training.seed=42 --training.model=$model
+                --training.batch_size=$batch_size --training.model=$model \
+                --training.seed=42 \
+                --logging.use_wandb=True --logging.wandb_group=$wandb_group \
+                --logging.wandb_project=$wandb_projname
 
 # dataset='stl10'
 
-# cp $SLURM_TMPDIR/*.pth $checkpt_dir/resnet50_checkpoints/
+# cp $SLURM_TMPDIR/*.pth $checkpt_dir/resnet18_checkpoints/
