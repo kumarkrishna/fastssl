@@ -34,7 +34,8 @@ elif dataset == "stl10":
 
 elif dataset == "cifar10":
     dataset_folder = "/network/datasets/cifar10.var/cifar10_torchvision/"
-    ffcv_folder = "/network/projects/_groups/linclab_users/ffcv/ffcv_datasets/cifar10"
+    # ffcv_folder = "/network/projects/_groups/linclab_users/ffcv/ffcv_datasets/cifar10"
+    ffcv_folder = "/network/scratch/g/ghosharn/ffcv/ffcv_datasets/cifar10"
 
 
 if dataset == "cifar100":
