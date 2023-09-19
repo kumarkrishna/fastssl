@@ -23,14 +23,15 @@ from ffcv.transforms.common import Squeeze
 
 write_dataset = False
 
-dataset = "cifar10"
+dataset = "stl10"
 
 if dataset == "cifar100":
     dataset_folder = "/network/datasets/cifar100.var/cifar100_torchvision/"
     ffcv_folder = "/network/projects/_groups/linclab_users/ffcv/ffcv_datasets/cifar100"
 elif dataset == "stl10":
     dataset_folder = "/network/datasets/stl10.var/stl10_torchvision/"
-    ffcv_folder = "/network/projects/_groups/linclab_users/ffcv/ffcv_datasets/stl10"
+    # ffcv_folder = "/network/projects/_groups/linclab_users/ffcv/ffcv_datasets/stl10"
+    ffcv_folder = "/network/scratch/g/ghosharn/ffcv/ffcv_datasets/stl10"
 
 elif dataset == "cifar10":
     dataset_folder = "/network/datasets/cifar10.var/cifar10_torchvision/"
@@ -55,6 +56,9 @@ elif dataset == "cifar10":
     )
 
 elif dataset == "stl10":
+    unlabeledset = torchvision.datasets.STL10(
+        root=dataset_folder, split="unlabeled", download=False, transform=None
+    )
     trainset = torchvision.datasets.STL10(
         root=dataset_folder, split="train", download=False, transform=None
     )
@@ -73,6 +77,14 @@ if write_dataset:
         path = train_beton_fpath if name == "train" else test_beton_fpath
         writer = DatasetWriter(path, {"image": RGBImageField(), "label": IntField()})
         writer.from_indexed_dataset(ds)
+    if dataset=='stl10':
+        datasets = {"unlabeled": unlabeledset}
+        unlabeled_beton_fpath = os.path.join(ffcv_folder, "unlabeled.beton")
+        for name, ds in datasets.items():
+            breakpoint()
+            path = unlabeled_beton_fpath
+            writer = DatasetWriter(path, {"image": RGBImageField(), "label": IntField()})
+            writer.from_indexed_dataset(ds)
 
 
 ## VERIFY the WRITTEN DATASET
@@ -102,6 +114,7 @@ for name in ["train", "test"]:
         num_workers=1,
         order=OrderOption.SEQUENTIAL,
         # drop_last=(name=='train'),
+        drop_last=False,
         pipelines={"image": image_pipeline, "label": label_pipeline},
     )
 
@@ -189,6 +202,8 @@ mean /= nb_samples
 std /= nb_samples
 print("Train Dataset mean", mean)
 print("Train Dataset std", std)
+print("Train Dataset mean*255", mean*255)
+print("Train Dataset std*255", std*255)
 mean = 0.0
 std = 0.0
 nb_samples = 0.0
@@ -202,6 +217,8 @@ mean /= nb_samples
 std /= nb_samples
 print("Test Dataset mean", mean)
 print("Test Dataset std", std)
+print("Test Dataset mean*255", mean*255)
+print("Test Dataset std*255", std*255)
 
 ### ===============================================================================
 # STL10 stats
