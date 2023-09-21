@@ -2,7 +2,7 @@
 #SBATCH --array=0-17%20
 #SBATCH --partition=long
 #SBATCH --gres=gpu:rtx8000:1
-#SBATCH --mem=16GB
+#SBATCH --mem=24GB
 #SBATCH --time=11:00:00
 #SBATCH --cpus-per-gpu=4
 #SBATCH --output=sbatch_out/multiPatch_barlow_results.%A.%a.out
@@ -56,7 +56,7 @@ model=resnet50feat
 
 for eval_i in {5..100..5}
 do
-    # Let's precache features, should take ~35 seconds (rtx8000)
+    # Let's precache features
     python scripts/train_model_multiPatch.py --config-file configs/cc_precache.yaml \
                     --training.lambd=$lambd --training.projector_dim=$pdim \
                     --eval.num_augmentations_pretrain=$augs --eval.epoch=$eval_i \
@@ -65,7 +65,7 @@ do
                     --training.batch_size=$batch_size --training.model=$model \
                     --training.train_dataset=$train_dpath --training.val_dataset=$val_dpath
 
-    # run linear eval on precached features from model: using default seed 42
+    # run linear eval on precached features from model
     python scripts/train_model_multiPatch.py --config-file configs/cc_classifier.yaml \
                     --training.lambd=$lambd --training.projector_dim=$pdim \
                     --eval.num_augmentations_pretrain=$augs --eval.epoch=$eval_i \
@@ -76,6 +76,27 @@ do
                     --logging.wandb_project=$wandb_projname \
                     --training.train_dataset=$train_dpath --training.val_dataset=$val_dpath
 done
-# dataset='stl10'
 
-# cp $SLURM_TMPDIR/*.pth $checkpt_dir/resnet50_checkpoints/
+# dataset='stl10'
+# for eval_i in {5..100..5}
+# do
+#     # Let's precache features
+#     python scripts/train_model_multiPatch.py --config-file configs/cc_precache.yaml \
+#                     --training.lambd=$lambd --training.projector_dim=$pdim \
+#                     --eval.num_augmentations_pretrain=$augs --eval.epoch=$eval_i \
+#                     --training.num_augmentations=16 --training.seed=$sidx \
+#                     --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir \
+#                     --training.batch_size=$batch_size --training.model=$model \
+#                     --training.train_dataset=$train_dpath --training.val_dataset=$val_dpath
+
+#     # run linear eval on precached features from model
+#     python scripts/train_model_multiPatch.py --config-file configs/cc_classifier.yaml \
+#                     --training.lambd=$lambd --training.projector_dim=$pdim \
+#                     --eval.num_augmentations_pretrain=$augs --eval.epoch=$eval_i \
+#                     --training.num_augmentations=16 \
+#                     --training.dataset=$dataset --training.ckpt_dir=$checkpt_dir \
+#                     --training.seed=$sidx --training.model=$model \
+#                     --logging.use_wandb=True --logging.wandb_group=$wandb_group \
+#                     --logging.wandb_project=$wandb_projname \
+#                     --training.train_dataset=$train_dpath --training.val_dataset=$val_dpath
+# done
