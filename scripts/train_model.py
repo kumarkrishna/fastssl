@@ -47,7 +47,14 @@ from fastssl.data import (
 from fastssl.models import barlow_twins as bt
 from fastssl.models import linear, byol, simclr, vicreg
 
-from fastssl.utils.base import set_seeds, get_args_from_config, merge_with_args
+from fastssl.utils.base import (
+    set_seeds, 
+    get_args_from_config, 
+    merge_with_args,
+    start_wandb_server,
+    stop_wandb_server,
+    log_wandb
+)
 import fastssl.utils.powerlaw as powerlaw
 
 Section("training", "Fast CIFAR-10 training").params(
@@ -93,6 +100,11 @@ Section("eval", "Fast CIFAR-10 evaluation").params(
     ),
 )
 
+Section("logging", "Fast CIFAR-10 logging options").params(
+    use_wandb=Param(bool, "Use wandb to log results", default=False),
+    wandb_group=Param(str, "Wandb team to log run", default="eigengroup"),
+    wandb_project=Param(str, "Wandb project to log run", default="temp-proj"),
+)
 
 def build_dataloaders(
     dataset="cifar10",
@@ -299,11 +311,21 @@ def build_model(args=None):
             model_type = ""
         else:
             model_type = training.model  # supports : resnet50feat, resnet50proj
+        if "proj" in training.model:
+            feat_dim = training.projector_dim
+        else:
+            if "resnet18" in training.model:
+                feat_dim = 512
+            elif "resnet50" in training.model:
+                feat_dim = 2048
+            else:
+                feat_dim = 2048
         model_args = {
             "bkey": model_type,
             "ckpt_path": ckpt_path,
             "dataset": training.dataset,
-            "feat_dim": training.projector_dim if "proj" in training.model else 2048,
+            # "feat_dim": training.projector_dim if "proj" in training.model else 2048,
+            "feat_dim": feat_dim,
             "proj_hidden_dim": training.hidden_dim
             if eval.train_algorithm in ("byol")
             else training.projector_dim,
@@ -558,7 +580,7 @@ def precache_outputs(model, loaders, args, eval_args):
     return output_dict
 
 
-def train(model, loaders, optimizer, loss_fn, args, eval_args):
+def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False):
     if args.track_alpha:
         results = {
             "train_loss": [],
@@ -607,6 +629,9 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args):
             results["alpha_arr"] = alpha_arr
             results["R2_arr"] = R2_arr
             results["R2_100_arr"] = R2_100_arr
+
+        if use_wandb:
+            log_wandb(results, step=0, skip_keys=['eigenspectrum'])
 
     if args.use_autocast:
         scaler = GradScaler()
@@ -699,6 +724,9 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args):
                 results["R2"].append((epoch, R2))
                 results["R2_100"].append((epoch, R2_100))
                 # print(results['alpha'])
+
+        if use_wandb:
+            log_wandb(results, step=epoch, skip_keys=['eigenspectrum'])
 
     return results
 
@@ -795,7 +823,8 @@ def run_experiment(args):
         print("CONSTRUCTED LOSS FUNCTION")
 
         # train the model with default=BT
-        results = train(model, loaders, optimizer, loss_fn, training, eval)
+        results = train(model, loaders, optimizer, loss_fn, training, eval,
+                        args.logging.use_wandb)
 
         # save results
         save_path = gen_ckpt_path(
@@ -827,6 +856,23 @@ if __name__ == "__main__":
     args.training.val_dataset = args.training.val_dataset.format(
         dataset=args.training.dataset
     )
+    logging_modelname = args.training.model
+    logging_modelname = logging_modelname.replace("proj", "")
+    logging_modelname = logging_modelname.replace("feat", "")
+    logging_jobtype = args.training.algorithm
+    if logging_jobtype == 'linear':
+        logging_jobtype = f'{args.eval.train_algorithm}_{logging_jobtype}'
+    if args.logging.use_wandb:
+        start_wandb_server(train_config_dict=args.training.__dict__,
+                           eval_config_dict=args.eval.__dict__,
+                           wandb_group=args.logging.wandb_group,
+                           wandb_project=args.logging.wandb_project,
+                           exp_name=f'{logging_modelname}_' +\
+                                    f'{args.training.algorithm}_' +\
+                                    f'{args.training.seed}',
+                           exp_group=f'{logging_modelname}',
+                           exp_job_type=f'{logging_jobtype}'
+                           )
 
     # train model
     start_time = time.time()
@@ -835,3 +881,6 @@ if __name__ == "__main__":
     # wrapup experiments with logging key variables
     print(f"Total time: {time.time() - start_time}")
     print(f"Results saved to {save_fname}")
+
+    if args.logging.use_wandb: 
+        stop_wandb_server()

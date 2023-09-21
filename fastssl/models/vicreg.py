@@ -29,44 +29,37 @@ def VICRegLoss(model, inp, _lambda=None, _mu=None):
     Returns:
         loss: scalar tensor
     """
-    # breakpoint()
     # generate samples from tuple
     inp = list(inp)
     _ = inp.pop(1)
     num_augs = len(inp)
-    # for x in inp:
-    #     x = x.cuda(non_blocking=True)
-    # (x1, x2), _ = inp
-    # x1, x2 = x1.cuda(non_blocking=True), x2.cuda(non_blocking=True)
-    # x1, x2 = TransformGPU(x1, x2)
+    for x in inp:
+        x = x.cuda(non_blocking=True)
 
     bsz = inp[0].shape[0]
-    # bsz = x1.shape[0]
-    # x,_ = inp
-    # x1,x2 = ssl_transform(x.cuda(non_blocking=True))
-    # bsz = x1.shape[0]
 
     # forward pass
-    z_list = [model(x) for x in inp]
+    z_list = model(torch.vstack(inp)).chunk(num_augs)
 
-    z_center_list = [(z - z.mean(0)) for z in z_list]  # NxD
+    all_z = torch.stack(z_list)
+    z_center = all_z - all_z.mean(1, keepdims=True) # A x NxD
 
     repr_loss = 0.0
     std_loss = 0.0
     cov_loss = 0.0
     # compute sum across all patches of each image for each embedding dim
-    z_sum = torch.sum(torch.stack(z_list), dim=0)
-    z_center_sum = torch.sum(torch.stack(z_center_list), dim=0)
+    z_sum = torch.sum(all_z, dim=0)
+    z_center_sum = torch.sum(z_center, dim=0)
     
     # mulitpatch v1
     for i in range(num_augs-1):
         # take embedding of one patch
         z1 = z_list[i]
-        z1_center = z_center_list[i]
+        z1_center = z_center[i]
         # take mean embedding of all other patches
         z2 = (z_sum - z_list[i]) / (num_augs - 1)
 
-        z2_center = (z_center_sum - z_center_list[i]) / (num_augs - 1)
+        z2_center = (z_center_sum - z_center[i]) / (num_augs - 1)
         
         # compute VICReg loss for each such pairing
         # take sum across all patches
@@ -88,7 +81,7 @@ def VICRegLoss(model, inp, _lambda=None, _mu=None):
             off_diagonal(cov_z2).pow_(2).sum().div(z2.shape[1])
     # return average across all patches as the final loss
     # breakpoint()
-    tqdm.write(f'{repr_loss.data.item():.4f}, {std_loss.data.item():.4f}, {cov_loss.data.item():.4f}')
+    # tqdm.write(f'{repr_loss.data.item():.4f}, {std_loss.data.item():.4f}, {cov_loss.data.item():.4f}')
     loss = (_lambda * repr_loss + _mu * std_loss + cov_loss)# / num_augs
     
     return loss
@@ -127,7 +120,7 @@ class VICReg(SSL):
 
     def forward(self, x):
         projections = self._unnormalized_project(x)
-        return F.normalize(projections, dim=-1)
+        return projections
 
     def _unnormalized_project(self, x):
         feats = self._unnormalized_feats(x)
