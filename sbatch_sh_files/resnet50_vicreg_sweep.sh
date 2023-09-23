@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#SBATCH --array=0-242%25
+#SBATCH --array=0-35%36
 #SBATCH --partition=long
 #SBATCH --gres=gpu:rtx8000:1
 #SBATCH --mem=16GB
@@ -14,9 +14,13 @@ module load anaconda/3
 conda activate ffcv_new
 WANDB__SERVICE_WAIT=300
 
-lambd_arr=(0.01 0.1 1.0 5.0 10.0 25.0 50.0 75.0 100.0)
-mu_arr=(0.01 0.1 1.0 5.0 10.0 25.0 50.0 75.0 100.0)
-pdim_arr=(256 1024 8192)
+# lambd_arr=(5.0 10.0 25.0 50.0 75.0 100.0 200.0 500.0 1000.0)
+# mu_arr=(5.0 10.0 25.0 50.0 75.0 100.0 200.0 500.0 1000.0)
+# pdim_arr=(256 1024 8192)
+# pdim_arr=(2048 4096)
+lambd_arr=(150.0 200.0 250.0 500.0 750.0 1000.0)
+mu_arr=(150.0 200.0 250.0 500.0 750.0 1000.0)
+pdim_arr=(8192)
 augs_arr=(2)
 dataset='cifar10'
 if [ $dataset = 'stl10' ]
