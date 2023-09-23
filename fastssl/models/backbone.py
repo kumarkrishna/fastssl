@@ -60,6 +60,7 @@ class BackBone(nn.Module):
             # check validity for adding layer to module
             if self.is_valid_layer(module, dataset):
                 backbone.append(module)
+        
         self.feats = nn.Sequential(*backbone)
 
     def _resnet18mod(self, base_width, dataset):
@@ -198,6 +199,12 @@ class BackBone(nn.Module):
             return deep_out
         else:
             return self.feats(x)
+        
+    def forward_backbone(self, x):
+        return self.feats(x)
+    
+    def forward_projector(self, x):
+        return self.proj(x)
 
 
 class streamNet(nn.Module):

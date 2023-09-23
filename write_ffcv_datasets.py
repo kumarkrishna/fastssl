@@ -21,44 +21,43 @@ from ffcv.transforms import (
 from ffcv.transforms.common import Squeeze
 
 
-write_dataset = False
-
+write_dataset = True
 dataset = "cifar10"
+download = True
 
+BASEPATH='/scratch/krishna/data/fastssl'
 if dataset == "cifar100":
-    dataset_folder = "/network/datasets/cifar100.var/cifar100_torchvision/"
-    ffcv_folder = "/network/projects/_groups/linclab_users/ffcv/ffcv_datasets/cifar100"
+    dataset_folder = f"{BASEPATH}/datasets/cifar100.var/cifar100_torchvision/"
+    ffcv_folder = f"{BASEPATH}/ffcv_datasets/cifar100"
 elif dataset == "stl10":
-    dataset_folder = "/network/datasets/stl10.var/stl10_torchvision/"
-    ffcv_folder = "/network/projects/_groups/linclab_users/ffcv/ffcv_datasets/stl10"
-
+    dataset_folder = f"{BASEPATH}/datasets/stl10.var/stl10_torchvision/"
+    ffcv_folder = f"{BASEPATH}/ffcv_datasets/stl10"
 elif dataset == "cifar10":
-    dataset_folder = "/network/datasets/cifar10.var/cifar10_torchvision/"
-    ffcv_folder = "/network/projects/_groups/linclab_users/ffcv/ffcv_datasets/cifar10"
-
+    dataset_folder = f"{BASEPATH}/datasets/cifar10.var/cifar10_torchvision/"
+    ffcv_folder = f"{BASEPATH}/ffcv_datasets/cifar10"
 
 if dataset == "cifar100":
     trainset = torchvision.datasets.CIFAR100(
-        root=dataset_folder, train=True, download=False, transform=None
+        root=dataset_folder, train=True, download=download, transform=None
     )
     testset = torchvision.datasets.CIFAR100(
-        root=dataset_folder, train=False, download=False, transform=None
+        root=dataset_folder, train=False, download=download, transform=None
     )
 
 elif dataset == "cifar10":
     trainset = torchvision.datasets.CIFAR10(
-        root=dataset_folder, train=True, download=False, transform=None
+        root=dataset_folder, train=True, download=download, transform=None
     )
     testset = torchvision.datasets.CIFAR10(
-        root=dataset_folder, train=False, download=False, transform=None
+        root=dataset_folder, train=False, download=download, transform=None
     )
 
 elif dataset == "stl10":
     trainset = torchvision.datasets.STL10(
-        root=dataset_folder, split="train", download=False, transform=None
+        root=dataset_folder, split="train", download=download, transform=None
     )
     testset = torchvision.datasets.STL10(
-        root=dataset_folder, split="test", download=False, transform=None
+        root=dataset_folder, split="test", download=download, transform=None
     )
 
 train_beton_fpath = os.path.join(ffcv_folder, "train.beton")

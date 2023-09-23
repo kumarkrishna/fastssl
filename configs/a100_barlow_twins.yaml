@@ -1,0 +1,34 @@
+train:
+  dataset: cifar10
+  datadir: /home/krishna/data/fastssl/datasets/{dataset}.var/{dataset}_torchvision/
+  ckpt_dir: /home/krishna/data/fastssl/exp/0729_001_na4
+  train_dataset: /home/krishna/data/fastssl/ffcv_datasets/{dataset}/train.beton
+  valid_dataset: /home/krishna/data/fastssl/ffcv_datasets/{dataset}/test.beton
+  batch_size: 512
+  epochs: 100
+  lambd: 0.0078125
+  label_smoothing_coeff: 0.1
+  # model architecture
+  hidden_dim: 2048
+  projector_dim: 2048
+  # system
+  seed: 42
+  algorithm: btwins
+  model: resnet50proj
+  model_type: BarlowTwins
+  loss_fn_type: BarlowTwinsLoss
+  mode: train
+  num_workers: 4
+  use_autocast: True
+  log_interval: 100
+  num_augmentations: 4
+  # optimizer
+  optim_type: adam
+  lr: 0.001
+  weight_decay: 0.0
+valid:
+  train_algorithm: btwins
+  epoch: 100
+  use_precache: False
+  num_augmentations_pretrain: 4
+  algorithm: linear

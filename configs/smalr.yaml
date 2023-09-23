@@ -1,0 +1,40 @@
+train:
+  ## dataset
+  dataset: cifar10
+  datadir: /scratch/krishna/data/fastssl/datasets/{dataset}.var/{dataset}_torchvision/
+  train_dataset: /scratch/krishna/data/fastssl/ffcv_datasets/{dataset}/train.beton
+  valid_dataset: /scratch/krishna/data/fastssl/ffcv_datasets/{dataset}/test.beton
+  ## logging
+  ckpt_dir: /home/krishna/logs/fastssl/exp/0804_smalrAug8_v0.1_080401
+  ## training hparams
+  batch_size: 512
+  epochs: 100
+  mode: pretrain
+  ## algorithm hparams
+  lambd: 0.0078125
+  label_smoothing_coeff: 0.1
+  algorithm: btwins
+  model: resnet50proj
+  model_type: SmaLR
+  loss_fn_type: SmaLRLoss
+  num_augmentations: 8
+  # model architecture
+  hidden_dim: 256
+  projector_dim: 256
+  # system
+  seed: 42
+  num_workers: 6
+  use_autocast: True
+  log_interval: 1
+  # optimizer
+  optim_type: adam
+  lr: 0.001
+  weight_decay: 0.0
+valid:
+  epoch: 100
+  use_precache: False
+  num_augmentations_pretrain: 8
+  algorithm: linear
+logging:
+  use_wandb: True
+  wandb_project: smalr
