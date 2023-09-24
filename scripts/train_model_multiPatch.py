@@ -45,7 +45,7 @@ from fastssl.data import (
     simple_dataloader,
 )
 from fastssl.models import barlow_twins as bt
-from fastssl.models import linear, byol, simclr
+from fastssl.models import linear, byol, simclr, vicreg
 
 from fastssl.utils.base import (
     set_seeds, 
@@ -70,7 +70,8 @@ Section("training", "Fast CIFAR-10 training").params(
     epochs=Param(int, "epochs", default=100),
     lr=Param(float, "learning-rate", default=1e-3),
     weight_decay=Param(float, "weight_decay", default=1e-6),
-    lambd=Param(float, "lambd for BarlowTwins", default=1 / 128),
+    lambd=Param(float, "lambd for BarlowTwins/VICReg", default=1 / 128),
+    mu=Param(float, "mu for VICReg", default=25.0),
     momentum_tau=Param(float, "momentum_tau for BYOL", default=0.01),
     temperature=Param(float, "temperature for SimCLR", default=0.01),
     seed=Param(int, "seed", default=1),
@@ -105,7 +106,6 @@ Section("logging", "Fast CIFAR-10 logging options").params(
     wandb_project=Param(str, "Wandb project to log run", default="temp-proj"),
 )
 
-
 def build_dataloaders(
     dataset="cifar10",
     algorithm="ssl",
@@ -123,7 +123,7 @@ def build_dataloaders(
             train_dataset, val_dataset, batch_size=batch_size, num_workers=num_workers
         )
     if "cifar" in dataset:
-        if algorithm in ("BarlowTwins", "SimCLR", "ssl", "byol"):
+        if algorithm in ("BarlowTwins", "SimCLR", "ssl", "byol", "VICReg"):
             # return cifar_pt(
             #     datadir, batch_size=batch_size, num_workers=num_workers)
             # for ffcv cifar10 dataloader
@@ -147,7 +147,7 @@ def build_dataloaders(
         else:
             raise Exception("Algorithm not implemented")
     elif dataset == "stl10":
-        if algorithm in ("BarlowTwins", "SimCLR", "ssl", "byol"):
+        if algorithm in ("BarlowTwins", "SimCLR", "ssl", "byol", "VICReg"):
             # return stl10_pt(
             #     datadir,
             #     splits=["unlabeled"],
@@ -241,7 +241,20 @@ def gen_ckpt_path(args, eval_args, epoch=100, prefix="exp", suffix="pth"):
                     args.weight_decay,
                 ),
             )
-
+        elif dir_algorithm in ["VICReg"]:
+            ckpt_dir = os.path.join(
+                main_dir,
+                "lambd_{:.3f}_mu_{:.3f}_pdim_{}{}_bsz_{}_lr_{}_wd_{}".format(
+                    args.lambd,
+                    args.mu,
+                    args.projector_dim,
+                    "_no_autocast" if not args.use_autocast else "",
+                    args.batch_size,
+                    args.lr,
+                    args.weight_decay,
+                ),
+            )
+            
         # dir for augs during linear eval
         if args.algorithm == "linear":
             ckpt_dir = os.path.join(
@@ -270,7 +283,7 @@ def build_model(args=None):
     training = args.training
     eval = args.eval
 
-    if training.algorithm in ("BarlowTwins", "SimCLR", "ssl", "byol"):
+    if training.algorithm in ("BarlowTwins", "SimCLR", "ssl", "byol", "VICReg"):
         model_args = {
             "bkey": training.model,
             "dataset": training.dataset,
@@ -284,6 +297,10 @@ def build_model(args=None):
             # setting projector dim and hidden dim the same for SimCLR projector
             model_args["hidden_dim"] = training.projector_dim
             model_cls = simclr.SimCLR
+        elif training.algorithm in ("VICReg"):
+            # setting projector dim and hidden dim the same for VICReg projector
+            model_args["hidden_dim"] = training.projector_dim
+            model_cls = vicreg.VICReg
         else:
             model_args["hidden_dim"] = training.projector_dim
             model_cls = bt.BarlowTwins
@@ -293,12 +310,22 @@ def build_model(args=None):
         if eval.use_precache:
             model_type = ""
         else:
-            model_type = training.model  # supports : resnet50feat, resnet50proj
+            model_type = training.model  # supports : resnet<18/50><feat/proj>
+        if "proj" in training.model:
+            feat_dim = training.projector_dim
+        else:
+            if "resnet18" in training.model:
+                feat_dim = 512
+            elif "resnet50" in training.model:
+                feat_dim = 2048
+            else:
+                feat_dim = 2048
         model_args = {
             "bkey": model_type,
             "ckpt_path": ckpt_path,
             "dataset": training.dataset,
-            "feat_dim": training.projector_dim if "proj" in training.model else 2048,
+            # "feat_dim": training.projector_dim if "proj" in training.model else 2048,
+            "feat_dim": feat_dim,
             "proj_hidden_dim": training.hidden_dim
             if eval.train_algorithm in ("byol")
             else training.projector_dim,
@@ -318,6 +345,8 @@ def build_loss_fn(args=None):
         return byol.BYOLLoss
     elif args.algorithm == "SimCLR":
         return partial(simclr.SimCLRLoss, _temperature=args.temperature)
+    elif args.algorithm == "VICReg":
+        return partial(vicreg.VICRegLoss, _lambda=args.lambd, _mu=args.mu)
     elif args.algorithm == "linear":
 
         def classifier_xent(model, inp):
@@ -348,7 +377,7 @@ def build_optimizer(model, args=None):
     Returns:
         optimizer : optimizer for training model
     """
-    if args.algorithm in ("BarlowTwins", "SimCLR", "ssl", "byol"):
+    if args.algorithm in ("BarlowTwins", "SimCLR", "ssl", "byol", "VICReg"):
         return Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     elif args.algorithm == "linear":
         default_lr = 1e-3
@@ -418,7 +447,7 @@ def train_step(
             with autocast():
                 if args.algorithm == "byol":
                     loss = loss_fn(model, target_model, inp)
-                elif args.algorithm in ("BarlowTwins", "SimCLR", "ssl", "linear"):
+                elif args.algorithm in ("BarlowTwins", "SimCLR", "ssl", "linear", "VICReg"):
                     loss = loss_fn(model, inp)
                 else:
                     raise Exception("Algorithm not implemented")
