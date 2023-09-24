@@ -70,7 +70,6 @@ def VICRegLoss(model, inp, _lambda=None, _mu=None):
         # take sum across all patches
         std_loss += torch.mean(F.relu(1 - std_z1)) / 2 + \
             torch.mean(F.relu(1 - std_z2)) / 2
-        std_loss *= 2
         
         # cov_z1 = (z1.T @ z1) / (bsz - 1)
         # cov_z2 = (z2.T @ z2) / (bsz - 1)
