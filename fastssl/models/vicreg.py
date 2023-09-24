@@ -52,36 +52,68 @@ def VICRegLoss(model, inp, _lambda=None, _mu=None):
     z_center_sum = torch.sum(z_center, dim=0)
     
     # mulitpatch v1
-    for i in range(num_augs-1):
-        # take embedding of one patch
-        z1 = z_list[i]
-        z1_center = z_center[i]
-        # take mean embedding of all other patches
-        z2 = (z_sum - z_list[i]) / (num_augs - 1)
+    if num_augs == 2:
+        # avoiding redundant computation of loss
+        for i in range(num_augs-1):
+            # take embedding of one patch
+            z1 = z_list[i]
+            z1_center = z_center[i]
+            # take mean embedding of all other patches
+            z2 = (z_sum - z_list[i]) / (num_augs - 1)
 
-        z2_center = (z_center_sum - z_center[i]) / (num_augs - 1)
-        
-        # compute VICReg loss for each such pairing
-        # take sum across all patches
-        repr_loss += F.mse_loss(z1, z2)
+            z2_center = (z_center_sum - z_center[i]) / (num_augs - 1)
+            
+            # compute VICReg loss for each such pairing
+            # take sum across all patches
+            repr_loss += F.mse_loss(z1, z2)
 
-        std_z1 = z1.std(0) #torch.sqrt(z1_center.var(dim=0) + 0.0001)
-        std_z2 = z2.std(0) #torch.sqrt(z2_center.var(dim=0) + 0.0001)
-        # take sum across all patches
-        std_loss += torch.mean(F.relu(1 - std_z1)) / 2 + \
-            torch.mean(F.relu(1 - std_z2)) / 2
-        
-        # cov_z1 = (z1.T @ z1) / (bsz - 1)
-        # cov_z2 = (z2.T @ z2) / (bsz - 1)
-        cov_z1 = torch.einsum("ni,nj->ij", z1_center, z1_center) / (bsz - 1)
-        cov_z2 = torch.einsum("ni,nj->ij", z2_center, z2_center) / (bsz - 1)
-        # take sum across all patches
-        cov_loss += off_diagonal(cov_z1).pow_(2).sum().div(z1.shape[1]) + \
-            off_diagonal(cov_z2).pow_(2).sum().div(z2.shape[1])
-    # return average across all patches as the final loss
-    # breakpoint()
-    # tqdm.write(f'{repr_loss.data.item():.4f}, {std_loss.data.item():.4f}, {cov_loss.data.item():.4f}')
-    loss = (_lambda * repr_loss + _mu * std_loss + cov_loss)# / num_augs
+            std_z1 = z1.std(0) #torch.sqrt(z1_center.var(dim=0) + 0.0001)
+            std_z2 = z2.std(0) #torch.sqrt(z2_center.var(dim=0) + 0.0001)
+            # take sum across all patches
+            std_loss += torch.mean(F.relu(1 - std_z1)) / 2 + \
+                torch.mean(F.relu(1 - std_z2)) / 2
+            
+            # cov_z1 = (z1.T @ z1) / (bsz - 1)
+            # cov_z2 = (z2.T @ z2) / (bsz - 1)
+            cov_z1 = torch.einsum("ni,nj->ij", z1_center, z1_center) / (bsz - 1)
+            cov_z2 = torch.einsum("ni,nj->ij", z2_center, z2_center) / (bsz - 1)
+            # take sum across all patches
+            cov_loss += off_diagonal(cov_z1).pow_(2).sum().div(z1.shape[1]) + \
+                off_diagonal(cov_z2).pow_(2).sum().div(z2.shape[1])
+        # return average across all patches as the final loss
+        # tqdm.write(f'{repr_loss.data.item():.4f}, {std_loss.data.item():.4f}, {cov_loss.data.item():.4f}')
+        loss = (_lambda * repr_loss + _mu * std_loss + cov_loss)# / num_augs
+
+    else:
+        for i in range(num_augs):
+            # take embedding of one patch
+            z1 = z_list[i]
+            z1_center = z_center[i]
+            # take mean embedding of all other patches
+            z2 = (z_sum - z_list[i]) / (num_augs - 1)
+
+            z2_center = (z_center_sum - z_center[i]) / (num_augs - 1)
+            
+            # compute VICReg loss for each such pairing
+            # take sum across all patches
+            repr_loss += F.mse_loss(z1, z2)
+
+            std_z1 = z1.std(0) #torch.sqrt(z1_center.var(dim=0) + 0.0001)
+            std_z2 = z2.std(0) #torch.sqrt(z2_center.var(dim=0) + 0.0001)
+            # take sum across all patches
+            std_loss += torch.mean(F.relu(1 - std_z1)) / 2 + \
+                torch.mean(F.relu(1 - std_z2)) / 2
+            
+            # cov_z1 = (z1.T @ z1) / (bsz - 1)
+            # cov_z2 = (z2.T @ z2) / (bsz - 1)
+            cov_z1 = torch.einsum("ni,nj->ij", z1_center, z1_center) / (bsz - 1)
+            cov_z2 = torch.einsum("ni,nj->ij", z2_center, z2_center) / (bsz - 1)
+            # take sum across all patches
+            cov_loss += off_diagonal(cov_z1).pow_(2).sum().div(z1.shape[1]) + \
+                off_diagonal(cov_z2).pow_(2).sum().div(z2.shape[1])
+        # return average across all patches as the final loss
+        # tqdm.write(f'{repr_loss.data.item():.4f}, {std_loss.data.item():.4f}, {cov_loss.data.item():.4f}')
+        loss = (_lambda * repr_loss + _mu * std_loss + cov_loss)/ num_augs
     
     return loss
 
