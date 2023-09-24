@@ -61,6 +61,7 @@ python scripts/train_model_multiPatch.py --config-file configs/cc_VICReg.yaml \
 model=resnet50feat
 # Let's precache features, should take ~35 seconds (rtx8000)
 python scripts/train_model_multiPatch.py --config-file configs/cc_precache.yaml \
+                --eval.train_algorithm='VICReg' \
                 --training.lambd=$lambd --training.mu=$mu \
                 --training.projector_dim=$pdim \
                 --eval.num_augmentations_pretrain=$augs --eval.epoch=100 \
@@ -71,6 +72,7 @@ python scripts/train_model_multiPatch.py --config-file configs/cc_precache.yaml 
 
 # run linear eval on precached features from model: using default seed 42
 python scripts/train_model_multiPatch.py --config-file configs/cc_classifier.yaml \
+                --eval.train_algorithm='VICReg' \
                 --training.lambd=$lambd --training.mu=$mu \
                 --training.projector_dim=$pdim \
                 --eval.num_augmentations_pretrain=$augs --eval.epoch=100 \
