@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#SBATCH --array=0-13%15
+#SBATCH --array=0-27%15
 #SBATCH --partition=long
 #SBATCH --gres=gpu:rtx8000:1
 #SBATCH --mem=16GB
@@ -15,8 +15,8 @@ conda activate ffcv_new
 
 lambd_arr=(1.0 2.0 5.0 10.0 15.0 20.0 25.0 30.0 40.0 50.0 60.0 75.0 90.0 100.0)
 pdim_arr=(256)
-augs_arr=(4)
-# augs_arr=(8)
+# augs_arr=(4)
+augs_arr=(4 8)
 dataset='cifar10'
 if [ $dataset = 'stl10' ]
 then
