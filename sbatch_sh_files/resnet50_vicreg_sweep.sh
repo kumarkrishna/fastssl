@@ -61,7 +61,7 @@ plidx=$((SLURM_ARRAY_TASK_ID%lenLP))
 pidx=$((pmlidx/lenL))
 lidx=$((pmlidx%lenL))
 lambd=${lambd_arr[$lidx]}
-mu=${mu_arr[$lidx]}
+mu=${lambd_arr[$lidx]}
 pdim=${pdim_arr[$pidx]}
 augs=${augs_arr[$aidx]}
 
