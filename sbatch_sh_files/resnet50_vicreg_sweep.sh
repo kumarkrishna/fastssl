@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#SBATCH --array=0-35%36
+#SBATCH --array=0-80%50
 #SBATCH --partition=long
 #SBATCH --gres=gpu:rtx8000:1
 #SBATCH --mem=16GB
