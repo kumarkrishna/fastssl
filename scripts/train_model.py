@@ -310,7 +310,7 @@ def build_model(args=None):
         if eval.use_precache:
             model_type = ""
         else:
-            model_type = training.model  # supports : resnet50feat, resnet50proj
+            model_type = training.model  # supports : resnet<18/50><feat/proj>
         if "proj" in training.model:
             feat_dim = training.projector_dim
         else:
