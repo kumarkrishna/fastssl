@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#SBATCH --array=0-17%20
+#SBATCH --array=0-23%25
 #SBATCH --partition=long
 #SBATCH --gres=gpu:rtx8000:1
 #SBATCH --mem=16GB
@@ -14,10 +14,12 @@ module load anaconda/3
 conda activate ffcv_new
 WANDB__SERVICE_WAIT=300
 
-# lambd_arr=(800.0 800.0 800.0 800.0 800.0 800.0 800.0 800.0)
+# lambd_arr=(750.0 750.0 750.0 750.0 750.0 750.0 750.0 750.0)
 # lambd_arr=(250.0 400.0 500.0 600.0 750.0)
-lambd_arr=(25.0 50.0 75.0 100.0 150.0 200.0)
+# lambd_arr=(25.0 50.0 75.0 100.0 150.0 200.0)
 # lambd_arr=(20.0 20.0 25.0 25.0 25.0 75.0 200.0 800.0)
+# pdim_arr=(64 128 256 512 1024 2048 4096 8192)
+lambd_arr=(750.0 750.0 750.0 750.0 750.0 750.0 750.0 750.0)
 pdim_arr=(64 128 256 512 1024 2048 4096 8192)
 dataset='cifar10'
 if [ $dataset = 'stl10' ]
@@ -33,7 +35,6 @@ cfgidx=$((SLURM_ARRAY_TASK_ID%lenL))
 lambd=${lambd_arr[$cfgidx]}
 mu=${lambd_arr[$cfgidx]}
 pdim=${pdim_arr[$cfgidx]}
-pdim=8192
 
 wandb_group='eigengroup'
 wandb_projname='VICReg-pdim-ortho-result'
