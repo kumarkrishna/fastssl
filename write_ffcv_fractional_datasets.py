@@ -24,19 +24,30 @@ def select_indices(dataset, fraction_trainset=1.0):
     if fraction_trainset==1.0:
         pass
     else:
-        len_dataset = len(dataset.targets)
+        try:
+            len_dataset = len(dataset.targets)
+        except:
+            print("`targets` not available, trying to use `labels`")
+            try:
+                len_dataset = len(dataset.labels)
+            except:
+                NotImplementedError
         num_datapoints = int(fraction_trainset*len_dataset)
-        indices = torch.randperm(len(dataset.targets))[:num_datapoints]
+        indices = torch.randperm(len_dataset)[:num_datapoints]
         dataset.data = dataset.data[indices,...]
-        new_targets = [dataset.targets[i] for i in indices]
-        dataset.targets = new_targets
+        if 'targets' in dataset.__dict__.keys():
+            new_targets = [dataset.targets[i] for i in indices]
+            dataset.targets = new_targets
+        else:
+            new_targets = [dataset.labels[i] for i in indices]
+            dataset.labels = new_targets
     return dataset
 
 
 fraction_trainset = 0.25
 write_dataset = True
 
-dataset = "cifar10"
+dataset = "stl10"
 
 if dataset == "cifar100":
     dataset_folder = "/network/datasets/cifar100.var/cifar100_torchvision/"
@@ -79,29 +90,40 @@ elif dataset == "stl10":
         root=dataset_folder, split="test", download=False, transform=None
     )
 
-train_beton_fpath = os.path.join(ffcv_folder, "train.beton")
-test_beton_fpath = os.path.join(ffcv_folder, "test.beton")
+train_beton_fpath = os.path.join(ffcv_folder, "train2.beton")
+test_beton_fpath = os.path.join(ffcv_folder, "test2.beton")
+if dataset=='stl10':
+    unlabeled_beton_fpath = os.path.join(ffcv_folder, "unlabeled.beton")
 
 if fraction_trainset < 1.0:
-    trainset = select_indices(trainset, fraction_trainset)
-    train_beton_fpath = os.path.join(ffcv_folder, f"train_{fraction_trainset:.2f}.beton")
+    if 'cifar' in dataset:
+        trainset = select_indices(trainset, fraction_trainset)
+        train_beton_fpath = os.path.join(ffcv_folder, 
+                                         f"train_{fraction_trainset:.2f}.beton")
+    elif dataset=='stl10':
+        unlabeledset = select_indices(unlabeledset, fraction_trainset)
+        unlabeled_beton_fpath = os.path.join(ffcv_folder, 
+                                         f"unlabeled_{fraction_trainset:.2f}.beton")
+    else:
+        NotImplementedError
 
 ## WRITE TO BETON FILES
 if write_dataset:
-    datasets = {"train": trainset, "test": testset}
-    for name, ds in datasets.items():
+    if 'cifar' in dataset:
+        datasets = {"train": (trainset, train_beton_fpath), 
+                    "test": (testset, test_beton_fpath)}
+    elif dataset=='stl10':
+        datasets = {"train": (trainset, train_beton_fpath), 
+                    "test": (testset, test_beton_fpath),
+                    "unlabeled": (unlabeledset, unlabeled_beton_fpath)}
+    else:
+        NotImplementedError
+    for name, ds_path_tup in datasets.items():
         breakpoint()
-        path = train_beton_fpath if name == "train" else test_beton_fpath
+        ds, path = ds_path_tup
+        # path = train_beton_fpath if name == "train" else test_beton_fpath
         writer = DatasetWriter(path, {"image": RGBImageField(), "label": IntField()})
         writer.from_indexed_dataset(ds)
-    if dataset=='stl10':
-        datasets = {"unlabeled": unlabeledset}
-        unlabeled_beton_fpath = os.path.join(ffcv_folder, "unlabeled.beton")
-        for name, ds in datasets.items():
-            breakpoint()
-            path = unlabeled_beton_fpath
-            writer = DatasetWriter(path, {"image": RGBImageField(), "label": IntField()})
-            writer.from_indexed_dataset(ds)
 
 
 ## VERIFY the WRITTEN DATASET
