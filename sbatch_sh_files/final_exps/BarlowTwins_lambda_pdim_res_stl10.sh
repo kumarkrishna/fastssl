@@ -1,23 +1,27 @@
 #!/usr/bin/env bash
-#SBATCH --array=0-29%20
+#SBATCH --array=0-23%25
 #SBATCH --partition=long
 #SBATCH --gres=gpu:rtx8000:1
 #SBATCH --mem=20GB
 #SBATCH --time=5:00:00
 #SBATCH --cpus-per-gpu=4
-#SBATCH --output=sbatch_out/resnet50_barlowtwins_stl10_sweep.%A.%a.out
-#SBATCH --error=sbatch_err/resnet50_barlowtwins_stl10_sweep.%A.%a.err
-#SBATCH --job-name=resnet50_barlowtwins_stl10_sweep
+#SBATCH --output=sbatch_out/resnet50_barlowtwins_stl10_result.%A.%a.out
+#SBATCH --error=sbatch_err/resnet50_barlowtwins_stl10_result.%A.%a.err
+#SBATCH --job-name=resnet50_barlowtwins_stl10_result
 
 . /etc/profile
 module load anaconda/3
 conda activate ffcv_new
 WANDB__SERVICE_WAIT=300
 
-lambd_arr=(0.04 0.0004 0.04 0.0004 0.008 0.0008 0.002 0.001 0.0004 0.0008)
+# lambd_arr=(0.04 0.0004 0.04 0.0004 0.008 0.0008 0.002 0.001 0.0004 0.0008)
+lambd_arr=(0.0004 0.0004 0.0004 0.0004 0.0004 0.0004 0.0004 0.0004)
 # pdim_arr=(64 128 256 512 1024 2048 4096 8192)
 # rewriting the order to make sure the jobs are well distributed
-pdim_arr=(64 8192 128 4096 256 2048 2048 512 512 1024)
+# pdim_arr=(64 8192 128 4096 256 2048 2048 512 512 1024)
+pdim_arr=(64 8192 128 4096 256 2048 512 1024)
+# lambd_arr=(0.0008 0.002)
+# pdim_arr=(512 512)
 dataset='stl10'
 if [ $dataset = 'stl10' ]
 then
