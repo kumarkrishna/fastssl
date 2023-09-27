@@ -3,7 +3,7 @@
 #SBATCH --partition=long
 #SBATCH --gres=gpu:rtx8000:1
 #SBATCH --mem=20GB
-#SBATCH --time=11:00:00
+#SBATCH --time=5:00:00
 #SBATCH --cpus-per-gpu=4
 #SBATCH --output=sbatch_out/multiPatch_barlow_fracTrain_stl10_sweep.%A.%a.out
 #SBATCH --error=sbatch_err/multiPatch_barlow_fracTrain_stl10_sweep.%A.%a.err
