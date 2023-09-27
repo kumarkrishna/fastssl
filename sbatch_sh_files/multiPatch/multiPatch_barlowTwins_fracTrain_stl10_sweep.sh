@@ -1,23 +1,23 @@
 #!/usr/bin/env bash
-#SBATCH --array=0-9%20
+#SBATCH --array=0-17%20
 #SBATCH --partition=long
 #SBATCH --gres=gpu:rtx8000:1
 #SBATCH --mem=20GB
 #SBATCH --time=11:00:00
 #SBATCH --cpus-per-gpu=4
-#SBATCH --output=sbatch_out/multiPatch_barlow_stl10_sweep.%A.%a.out
-#SBATCH --error=sbatch_err/multiPatch_barlow_stl10_sweep.%A.%a.err
-#SBATCH --job-name=multiPatch_barlow_stl10_sweep
+#SBATCH --output=sbatch_out/multiPatch_barlow_fracTrain_stl10_sweep.%A.%a.out
+#SBATCH --error=sbatch_err/multiPatch_barlow_fracTrain_stl10_sweep.%A.%a.err
+#SBATCH --job-name=multiPatch_barlow_fracTrain_stl10_sweep
 
 . /etc/profile
 module load anaconda/3
 conda activate ffcv_new
 WANDB__SERVICE_WAIT=300
 
-lambd_arr=(0.0004 0.0008 0.001 0.002 0.004 0.008 0.01 0.02)
+lambd_arr=(0.0004 0.0008 0.001 0.002 0.004 0.005 0.006 0.008 0.01)
 # pdim_arr=(64 128 256 512 1024 2048 4096 8192)
 pdim_arr=(256)
-augs_arr=(4)
+augs_arr=(4 8)
 dataset='stl10'
 if [ $dataset = 'stl10' ]
 then
@@ -40,9 +40,21 @@ augs=${augs_arr[$aidx]}
 wandb_group='blake-richards'
 wandb_projname='multiPatch-Barlow-sweep-ep50-stl10'
 
-checkpt_dir=$SCRATCH/fastssl/checkpoints_mp_stl10_barlow
-train_dpath=$SCRATCH/ffcv/ffcv_datasets/{dataset}/unlabeled.beton
+model=resnet50proj
+
+if [ $augs = 4 ]
+then
+    train_frac='_0.50'
+elif [ $augs = 8 ]
+then
+    train_frac='_0.25'
+else
+    train_frac=''
+fi
+train_dpath=$SCRATCH/ffcv/ffcv_datasets/{dataset}/unlabeled${train_frac}.beton
 val_dpath=$SCRATCH/ffcv/ffcv_datasets/{dataset}/test.beton
+
+checkpt_dir=$SCRATCH/fastssl/checkpoints${train_frac}_mp_stl10_barlow
 
 model=resnet50proj
 # Let's train a SSL (BarlowTwins) model with the above hyperparams
