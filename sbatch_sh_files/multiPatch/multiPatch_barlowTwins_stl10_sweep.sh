@@ -3,7 +3,7 @@
 #SBATCH --partition=long
 #SBATCH --gres=gpu:rtx8000:1
 #SBATCH --mem=20GB
-#SBATCH --time=11:00:00
+#SBATCH --time=19:00:00
 #SBATCH --cpus-per-gpu=4
 #SBATCH --output=sbatch_out/multiPatch_barlow_stl10_sweep.%A.%a.out
 #SBATCH --error=sbatch_err/multiPatch_barlow_stl10_sweep.%A.%a.err
@@ -38,13 +38,14 @@ pdim=${pdim_arr[$pidx]}
 augs=${augs_arr[$aidx]}
 
 wandb_group='blake-richards'
-wandb_projname='multiPatch-Barlow-sweep-ep50-stl10'
+wandb_projname='multiPatch-Barlow-sweep-ep100-stl10'
 
 checkpt_dir=$SCRATCH/fastssl/checkpoints_mp_stl10_barlow
 train_dpath=$SCRATCH/ffcv/ffcv_datasets/{dataset}/unlabeled.beton
 val_dpath=$SCRATCH/ffcv/ffcv_datasets/{dataset}/test.beton
 
 model=resnet50proj
+epochs=100
 # Let's train a SSL (BarlowTwins) model with the above hyperparams
 python scripts/train_model_multiPatch.py --config-file configs/cc_barlow_twins.yaml \
                 --training.model=$model --training.dataset=$dataset \
@@ -52,7 +53,7 @@ python scripts/train_model_multiPatch.py --config-file configs/cc_barlow_twins.y
                 --training.num_augmentations=$augs \
                 --training.batch_size=$batch_size --training.seed=42 \
                 --training.ckpt_dir=$checkpt_dir \
-                --training.epochs=50 --training.log_interval=50 \
+                --training.epochs=$epochs --training.log_interval=$epochs \
                 --logging.use_wandb=True --logging.wandb_group=$wandb_group \
                 --logging.wandb_project=$wandb_projname \
                 --training.train_dataset=$train_dpath --training.val_dataset=$val_dpath
@@ -64,7 +65,7 @@ val_dpath=$SCRATCH/ffcv/ffcv_datasets/{dataset}/test.beton
 python scripts/train_model_multiPatch.py --config-file configs/cc_precache.yaml \
                 --training.model=$model --training.dataset=$dataset \
                 --training.lambd=$lambd --training.projector_dim=$pdim \
-                --eval.num_augmentations_pretrain=$augs --eval.epoch=50 \
+                --eval.num_augmentations_pretrain=$augs --eval.epoch=$epochs \
                 --training.num_augmentations=16 \
                 --training.batch_size=$batch_size --training.seed=42 \
                 --training.ckpt_dir=$checkpt_dir \
@@ -74,7 +75,7 @@ python scripts/train_model_multiPatch.py --config-file configs/cc_precache.yaml 
 python scripts/train_model_multiPatch.py --config-file configs/cc_classifier.yaml \
                 --training.model=$model --training.dataset=$dataset \
                 --training.lambd=$lambd --training.projector_dim=$pdim \
-                --eval.num_augmentations_pretrain=$augs --eval.epoch=50 \
+                --eval.num_augmentations_pretrain=$augs --eval.epoch=$epochs \
                 --training.num_augmentations=16 \
                 --training.batch_size=$batch_size --training.seed=42 \
                 --training.ckpt_dir=$checkpt_dir \

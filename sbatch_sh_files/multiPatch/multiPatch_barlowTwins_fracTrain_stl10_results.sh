@@ -3,7 +3,7 @@
 #SBATCH --partition=long
 #SBATCH --gres=gpu:rtx8000:1
 #SBATCH --mem=20GB
-#SBATCH --time=10:00:00
+#SBATCH --time=20:00:00
 #SBATCH --cpus-per-gpu=4
 #SBATCH --output=sbatch_out/multiPatch_barlow_fracTrain_stl10_results.%A.%a.out
 #SBATCH --error=sbatch_err/multiPatch_barlow_fracTrain_stl10_results.%A.%a.err
@@ -14,7 +14,8 @@ module load anaconda/3
 conda activate ffcv_new
 WANDB__SERVICE_WAIT=300
 
-lambd_arr=(0.001 0.004)
+# lambd_arr=(0.001 0.004)
+lambd_arr=(0.002 0.006)
 # pdim_arr=(64 128 256 512 1024 2048 4096 8192)
 pdim_arr=(256 256)
 augs_arr=(4 8)
@@ -34,7 +35,7 @@ pdim=${pdim_arr[$cfg_idx]}
 augs=${augs_arr[$cfg_idx]}
 
 wandb_group='eigengroup'
-wandb_projname='multiPatch-Barlow-best-hparam-ep50-stl10'
+wandb_projname='multiPatch-Barlow-best-hparam-ep100-stl10'
 
 model=resnet50proj
 
@@ -51,7 +52,7 @@ train_dpath=$SCRATCH/ffcv/ffcv_datasets/{dataset}/unlabeled${train_frac}.beton
 val_dpath=$SCRATCH/ffcv/ffcv_datasets/{dataset}/test.beton
 
 checkpt_dir=$SCRATCH/fastssl/checkpoints${train_frac}_mp_stl10_barlow
-
+epochs=100
 # Let's train a SSL (BarlowTwins) model with the above hyperparams
 python scripts/train_model_multiPatch.py --config-file configs/cc_barlow_twins.yaml \
                 --training.model=$model --training.dataset=$dataset \
@@ -59,7 +60,7 @@ python scripts/train_model_multiPatch.py --config-file configs/cc_barlow_twins.y
                 --training.num_augmentations=$augs \
                 --training.batch_size=$batch_size --training.seed=$sidx \
                 --training.ckpt_dir=$checkpt_dir \
-                --training.epochs=50 --training.log_interval=5 \
+                --training.epochs=$epochs --training.log_interval=5 \
                 --logging.use_wandb=True --logging.wandb_group=$wandb_group \
                 --logging.wandb_project=$wandb_projname \
                 --training.train_dataset=$train_dpath --training.val_dataset=$val_dpath
@@ -69,7 +70,7 @@ train_dpath=$SCRATCH/ffcv/ffcv_datasets/{dataset}/train.beton
 val_dpath=$SCRATCH/ffcv/ffcv_datasets/{dataset}/test.beton
 
 dataset='stl10'
-for eval_i in {5..50..5}
+for eval_i in $( eval echo {5..$epochs..5} )
 do
     # Let's precache features
     python scripts/train_model_multiPatch.py --config-file configs/cc_precache.yaml \
@@ -95,7 +96,7 @@ do
 done
 
 dataset='cifar10'
-for eval_i in {5..50..5}
+for eval_i in $( eval echo {5..$epochs..5} )
 do
     # Let's precache features
     python scripts/train_model_multiPatch.py --config-file configs/cc_precache.yaml \

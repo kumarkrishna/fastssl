@@ -3,7 +3,7 @@
 #SBATCH --partition=long
 #SBATCH --gres=gpu:rtx8000:1
 #SBATCH --mem=20GB
-#SBATCH --time=5:00:00
+#SBATCH --time=10:00:00
 #SBATCH --cpus-per-gpu=4
 #SBATCH --output=sbatch_out/resnet50_barlowtwins_stl10_sweep.%A.%a.out
 #SBATCH --error=sbatch_err/resnet50_barlowtwins_stl10_sweep.%A.%a.err
@@ -34,20 +34,21 @@ lambd=${lambd_arr[$lidx]}
 pdim=${pdim_arr[$pidx]}
 
 wandb_group='blake-richards'
-wandb_projname='Barlow-resnet50-hparam-stl10'
+wandb_projname='Barlow-resnet50-hparam-stl10-v2'
 
 checkpt_dir=$SCRATCH/fastssl/checkpoints_stl10_barlow
 train_dpath=$SCRATCH/ffcv/ffcv_datasets/{dataset}/unlabeled.beton
 val_dpath=$SCRATCH/ffcv/ffcv_datasets/{dataset}/test.beton
 
 model=resnet50proj
+epochs=100
 # Let's train a SSL (BarlowTwins) model with the above hyperparams
 python scripts/train_model.py --config-file configs/cc_barlow_twins.yaml \
                 --training.model=$model --training.dataset=$dataset \
                 --training.lambd=$lambd --training.projector_dim=$pdim \
                 --training.batch_size=$batch_size --training.seed=42 \
                 --training.ckpt_dir=$checkpt_dir \
-                --training.epochs=50 --training.log_interval=50 \
+                --training.epochs=$epochs --training.log_interval=$epochs \
                 --logging.use_wandb=True --logging.wandb_group=$wandb_group \
                 --logging.wandb_project=$wandb_projname \
                 --training.train_dataset=$train_dpath --training.val_dataset=$val_dpath
@@ -61,7 +62,7 @@ python scripts/train_model.py --config-file configs/cc_precache.yaml \
                 --training.lambd=$lambd --training.projector_dim=$pdim \
                 --training.batch_size=$batch_size --training.seed=42 \
                 --training.ckpt_dir=$checkpt_dir \
-                --eval.epoch=50 \
+                --eval.epoch=$epochs \
                 --training.train_dataset=$train_dpath --training.val_dataset=$val_dpath
 
 # run linear eval on precached features from model: using default seed 42
@@ -70,7 +71,7 @@ python scripts/train_model.py --config-file configs/cc_classifier.yaml \
                 --training.lambd=$lambd --training.projector_dim=$pdim \
                 --training.batch_size=$batch_size --training.seed=42 \
                 --training.ckpt_dir=$checkpt_dir \
-                --eval.epoch=50 \
+                --eval.epoch=$epochs \
                 --logging.use_wandb=True --logging.wandb_group=$wandb_group \
                 --logging.wandb_project=$wandb_projname \
                 --training.train_dataset=$train_dpath --training.val_dataset=$val_dpath
