@@ -162,7 +162,6 @@ def gen_image_label_pipeline(
             os_cache=True,
             order=ordering,
             drop_last=False,
-            # pipelines={'image' : image_pipeline, 'label' : label_pipeline}
             pipelines=pipelines,
             custom_field_mapper=custom_field_img_mapper,
            )
