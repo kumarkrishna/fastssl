@@ -36,7 +36,7 @@ def SimCLRLoss(model, inp, _temperature=0.05):
     # z1 = model(x1)   #NXD
     # z2 = model(x2)   #NXD
 
-    z_norm_list = [(z - z.mean(0)) / z.std(0) for z in z_list]
+    z_norm_list = [F.normalize(z, dim=-1) for z in z_list]
     # z1_norm = F.normalize(z1, dim=-1)
     # z2_norm = F.normalize(z2, dim=-1)
 

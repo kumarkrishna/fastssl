@@ -1,0 +1,18 @@
+training:
+  dataset: 'cifar10'
+  datadir: '/network/datasets/{dataset}.var/{dataset}_torchvision/'
+  train_dataset: '/network/projects/_groups/linclab_users/ffcv/ffcv_datasets/{dataset}/train.beton'
+  val_dataset: '/network/projects/_groups/linclab_users/ffcv/ffcv_datasets/{dataset}/test.beton'
+  batch_size: 512
+  epochs: 100
+  lambd: 25.0
+  mu: 25.0
+  projector_dim: 128
+  seed: 42
+  algorithm: 'VICReg'
+  model: 'resnet50proj'
+  num_workers: 4
+  ckpt_dir: 'checkpoints'
+  use_autocast: True
+  log_interval: 100
+  num_augmentations: 2

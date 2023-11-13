@@ -88,6 +88,7 @@ class STLTransformFFCV():
                                         std=np.array(STL_FFCV_MEAN),type=np.float32)
                                 ]
         self.dataset_side_length = 64
+        # self.dataset_side_length = 96
         self.dataset_resize_scale = (0.2,1.0)
         self.dataset_resize_ratio = (0.75,4/3)
 

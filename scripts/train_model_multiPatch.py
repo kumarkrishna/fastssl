@@ -254,7 +254,7 @@ def gen_ckpt_path(args, eval_args, epoch=100, prefix="exp", suffix="pth"):
                     args.weight_decay,
                 ),
             )
-
+            
         # dir for augs during linear eval
         if args.algorithm == "linear":
             ckpt_dir = os.path.join(
@@ -604,9 +604,12 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False):
                     use_cuda=True,
                 )
                 activations_eigen = powerlaw.get_eigenspectrum(activations)
-                alpha, ypred, R2, R2_100 = powerlaw.stringer_get_powerlaw(
-                    activations_eigen, trange=np.arange(3, 100)
-                )
+                try:
+                    alpha, ypred, R2, R2_100 = powerlaw.stringer_get_powerlaw(
+                        activations_eigen, trange=np.arange(3, 50)
+                    )
+                except:
+                    alpha, R2, R2_100 = np.nan, np.nan, np.nan
                 # debug_plot(activations_eigen,alpha,ypred,R2,R2_100,'test_full_early_{:.4f}.png'.format(args.lambd))
                 # save_path = gen_ckpt_path(args, args.algorithm, args.epochs, 'results_{}_full_early_alpha'.format(args.dataset), 'npy')
                 # np.save(save_path,dict(alpha=alpha,R2=R2,R2_100=R2_100))
@@ -629,7 +632,7 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False):
             results["alpha_arr"] = alpha_arr
             results["R2_arr"] = R2_arr
             results["R2_100_arr"] = R2_100_arr
-
+        
         if use_wandb:
             log_wandb(results, step=0, skip_keys=['eigenspectrum'])
 
@@ -861,7 +864,10 @@ if __name__ == "__main__":
     logging_modelname = logging_modelname.replace("feat", "")
     logging_jobtype = args.training.algorithm
     if logging_jobtype == 'linear':
+        logging_modelname = f'{logging_modelname}_{args.eval.num_augmentations_pretrain}'
         logging_jobtype = f'{args.eval.train_algorithm}_{logging_jobtype}'
+    else:
+        logging_modelname = f'{logging_modelname}_{args.training.num_augmentations}'
     if args.logging.use_wandb:
         start_wandb_server(train_config_dict=args.training.__dict__,
                            eval_config_dict=args.eval.__dict__,
