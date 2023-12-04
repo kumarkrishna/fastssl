@@ -46,8 +46,8 @@ def BarlowTwinLoss(model, inp, _lambda=None):
     # bsz = x1.shape[0]
 
     # forward pass
-    # z_list = [model(x) for x in inp]
-    z_list = model(torch.vstack(inp).cuda(non_blocking=True))
+    z_list = torch.vstack([model(x) for x in inp])
+    # z_list = model(torch.vstack(inp).cuda(non_blocking=True))
     # z1 = model(x1)
     # z2 = model(x2)
 

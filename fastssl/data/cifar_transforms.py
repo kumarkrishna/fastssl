@@ -75,7 +75,7 @@ class STLTransformFFCV():
     """
     Defines a list of FFCV transforms for SSL on STL
     """
-    def __init__(self):
+    def __init__(self, side_len=64):
         self.transform_list = [
                                 RandomHorizontalFlip(flip_prob=0.5),
                                 ColorJitter(jitter_prob=0.8,
@@ -87,7 +87,8 @@ class STLTransformFFCV():
                                 NormalizeImage(mean=np.array(STL_FFCV_MEAN),
                                         std=np.array(STL_FFCV_MEAN),type=np.float32)
                                 ]
-        self.dataset_side_length = 64
+        self.dataset_side_length = side_len
+        # self.dataset_side_length = 64
         # self.dataset_side_length = 96
         self.dataset_resize_scale = (0.2,1.0)
         self.dataset_resize_ratio = (0.75,4/3)

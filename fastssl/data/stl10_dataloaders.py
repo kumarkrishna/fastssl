@@ -231,6 +231,7 @@ def gen_image_label_pipeline_ffcv_ssl(
     batch_size: int = None,
     num_workers: int = None,
     transform_cls: STLTransformFFCV = None,
+    transform_cls_aux: STLTransformFFCV = None,
     rescale: bool = False,
     device: str = "cuda:0",
     num_augmentations: int = 2,
@@ -243,6 +244,8 @@ def gen_image_label_pipeline_ffcv_ssl(
         batch_size (int, optional): Batch size. Defaults to None.
         num_workers (int, optional): Number of CPU workers. Defaults to None.
         transform_cls (STLTransformFFCV, optional): Transform object. Defaults to None.
+        transform_cls_aux (STLTransformFFCV, optional): Transform object for 2+ augs. 
+                                                        Defaults to transform_cls.
         rescale (bool, optional): Flag to rescale pixel vals to [0,1]. Defaults to False.
         device (_type_, optional): CPU/GPU. Defaults to 'cuda:0'.
         num_augmentations (int, optional): Number of patches. Defaults to 2.
@@ -253,6 +256,8 @@ def gen_image_label_pipeline_ffcv_ssl(
 
     datadir = {"train": train_dataset, "test": val_dataset}
     assert num_augmentations > 1, "Please use at least 2 augmentations for SSL."
+    if transform_cls_aux is None:
+        transform_cls_aux = transform_cls
 
     loaders = {}
 
@@ -264,11 +269,13 @@ def gen_image_label_pipeline_ffcv_ssl(
         label_pipeline = gen_label_pipeline(device=device)
         image_pipeline_augs = [
             gen_image_pipeline_ffcv_ssl(
-                device=device, transform_cls=transform_cls, rescale=rescale
-            )
-        ] * (
-            num_augmentations - 1
-        )  # creating other augmentations
+                device=device, 
+                transform_cls=transform_cls if idx==0 else transform_cls_aux, 
+                rescale=rescale
+            ) for idx in range(num_augmentations-1) ] # creating other augmentations
+        # ] * (
+        #     num_augmentations - 1
+        # )  # creating other augmentations
 
         ordering = OrderOption.RANDOM  # if split == 'train' else OrderOption.SEQUENTIAL
         # ordering = OrderOption.SEQUENTIAL #if split == 'train' else OrderOption.SEQUENTIAL
@@ -338,6 +345,7 @@ def stl_ffcv(
     """
 
     transform_cls = STLTransformFFCV()
+    transform_cls_aux = STLTransformFFCV(side_len=32)
     if test_ffcv:
         gen_img_label_fn = gen_image_label_pipeline_ffcv_ssl_test
     else:
@@ -348,6 +356,7 @@ def stl_ffcv(
         batch_size=batch_size,
         num_workers=num_workers,
         transform_cls=transform_cls,
+        transform_cls_aux=transform_cls_aux,
         rescale=False,
         device=device,
         num_augmentations=num_augmentations,
