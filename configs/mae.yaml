@@ -1,0 +1,18 @@
+training:
+  dataset: cifar10
+  datadir: ./data/cifar
+  train_dataset: /scratch/krishna/cache/data/ffcv/cifar_train.beton
+  val_dataset: /scratch/krishna/cache/data/ffcv/cifar_test.beton
+  batch_size: 512
+  epochs: 100
+  lambd: 0.1
+  project_dim: 128
+  seed: 1
+  algorithm: mae
+  model: mae_vit
+  num_workers: 8
+  ckpt_dir: ./results/0116/02/
+  use_autocast: True
+  num_augmentations: 2
+  mask_ratio: 0.8
+  train_interval: 10
