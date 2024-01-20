@@ -51,6 +51,7 @@ class MaskedAutoencoderViT(SSL):
         decoder_embed_dim=768,
         decoder_depth=3,
         decoder_num_heads=6,
+        get_alpha=False,
         mlp_ratio=4.0,
         norm_layer=nn.LayerNorm,
         norm_pix_loss=False,
@@ -64,7 +65,8 @@ class MaskedAutoencoderViT(SSL):
         self.mask_ratio = mask_ratio
         self.patch_embed = PatchEmbed(img_size, patch_size, in_chans, embed_dim)
         num_patches = self.patch_embed.num_patches
-
+        decoder_embed_dim = embed_dim
+        self.get_alpha = get_alpha
         self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
         self.pos_embed = nn.Parameter(
             torch.zeros(1, num_patches + 1, embed_dim), requires_grad=False
@@ -273,7 +275,20 @@ class MaskedAutoencoderViT(SSL):
         loss = (loss * mask).sum() / mask.sum()  # mean loss on removed patches
         return loss
 
+    def compute_feat(self, x):
+        breakpoint()
+        x = self.patch_embed(x) 
+        x = x + self.pos_embed[:, 1:, :]
+        cls_token = self.cls_token + self.pos_embed[:, :1, :]
+        cls_tokens = cls_token.expland(x.shape[0], -1, -1)
+        x = torch.cat((cls_tokens, x), dim=1)
+        for blk in self.blocks:
+            x = blk(x)
+        return x[:, 1:, :].mean(dim=1)
+
     def forward(self, imgs):
+        if self.get_alpha:
+            return self.compute_feat(imgs)
         latent, mask, ids_restore, target = self.forward_encoder(imgs)
         pred = self.forward_decoder(latent, ids_restore)  # [N, L, p*p*3]
         return pred, target, mask

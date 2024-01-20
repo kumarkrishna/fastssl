@@ -80,7 +80,7 @@ Section("training", "Fast CIFAR-10 training").params(
     algorithm=Param(str, "learning algorithm", default="ssl"),
     model=Param(str, "model to train", default="resnet50proj"),
     num_workers=Param(int, "num of CPU workers", default=4),
-    projector_dim=Param(int, "projector dimension", default=128),
+    embed_dim=Param(int, "projector dimension", default=128),
     hidden_dim=Param(int, "hidden dimension for BYOL projector", default=128),
     log_interval=Param(int, "log-interval in terms of epochs", default=20),
     ckpt_dir=Param(
@@ -259,7 +259,9 @@ def gen_ckpt_path(args, eval_args, epoch=100, prefix="exp", suffix="pth"):
                     args.weight_decay,
                 ),
             )
-
+        elif dir_algorithm in ["mae"]:
+            ckpt_dir = os.path.join(
+                main_dir, "edim_{}_bsz_{}_lr_{}_wd_{}".format(args.embed_dim, args.batch_size, args.lr, args.weight_decay))
         # dir for augs during linear eval
         if args.algorithm == "linear":
             ckpt_dir = os.path.join(
@@ -286,7 +288,7 @@ def build_model(args=None):
         model : model to train
     """
     training = args.training
-    eval = args.eval
+    eval_args = args.eval
 
     if training.algorithm in ("BarlowTwins", "SimCLR", "ssl", "byol", "VICReg"):
         model_args = {
@@ -313,14 +315,14 @@ def build_model(args=None):
         model_args = {
             "bkey": training.model,
             "dataset": training.dataset,
-            "projector_dim": training.projector_dim,
+            "embed_dim": training.embed_dim,
             "mask_ratio": training.mask_ratio,
         }
         model_cls = mae.MaskedAutoencoderViT
 
     elif training.algorithm == "linear":
-        ckpt_path = gen_ckpt_path(training, eval, epoch=args.eval.epoch)
-        if eval.use_precache:
+        ckpt_path = gen_ckpt_path(training, eval_args, epoch=args.eval.epoch)
+        if eval_args.use_precache:
             model_type = ""
         else:
             model_type = training.model  # supports : resnet<18/50><feat/proj>
@@ -340,7 +342,7 @@ def build_model(args=None):
             # "feat_dim": training.projector_dim if "proj" in training.model else 2048,
             "feat_dim": feat_dim,
             "proj_hidden_dim": training.hidden_dim
-            if eval.train_algorithm in ("byol")
+            if eval_args.train_algorithm in ("byol")
             else training.projector_dim,
             "num_classes": 10 if training.dataset in ["cifar10", "stl10"] else 100,
         }
@@ -829,13 +831,13 @@ def run_experiment(args):
 
         # train the model with default=BT
         results = train(
-            model, loaders, optimizer, loss_fn, train_args, eval, args.logging.use_wandb
+            model, loaders, optimizer, loss_fn, train_args, valid_args, args.logging.use_wandb
         )
 
         # save results
         save_path = gen_ckpt_path(
             train_args,
-            eval,
+            valid_args,
             train_args.epochs,
             "results_{}_alpha".format(train_args.dataset),
             "npy",

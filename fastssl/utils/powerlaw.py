@@ -74,6 +74,18 @@ def generate_activations_prelayer(net,layer,data_loader,use_cuda=False,dim_thres
     activations_np = np.vstack(activations)     # assuming first dimension is num_examples: batches x batch_size x <feat_dims> --> num_examples x <feat_dims>
     return activations_np
 
+def get_vit_activations(net, dataloader, use_cuda=False, dims=10000, test_run=False):
+    activations = []
+    if use_cuda:
+        net = net.cuda()
+    net.eval()
+    for i, (im, l) in enumerate(tqdm(dataloader)):
+        if use_cuda:
+            im = im.cuda()
+        outs = net(im)
+        activations.append(outs.cpu().numpy())
+    return np.vstack(activations) 
+
 def generate_activations_prelayer_batch(net,layer,images,pool_transform=None):
     activations = []
     def hook_fn(m, i, o):

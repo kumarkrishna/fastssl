@@ -21,9 +21,9 @@ from ffcv.transforms import (
 from ffcv.transforms.common import Squeeze
 
 
-write_dataset = False
+write_dataset = False 
 dataset = "cifar10"
-download = False
+download = True
 
 if dataset == "cifar100":
     dataset_folder = "/network/datasets/cifar100.var/cifar100_torchvision/"
@@ -34,9 +34,9 @@ elif dataset == "stl10":
     ffcv_folder = "/network/scratch/g/ghosharn/ffcv/ffcv_datasets/stl10"
 
 elif dataset == "cifar10":
-    dataset_folder = "./data/cifar10.var/cifar10_torchvision/"
+    dataset_folder = "/scratch/krishna/data/cifar10.var/cifar10_torchvision/"
     # ffcv_folder = "/network/projects/_groups/linclab_users/ffcv/ffcv_datasets/cifar10"
-    ffcv_folder = "/scratch/krishna/cache/data/ffcv/"
+    ffcv_folder = "/scratch/krishna/cache/data/ffcv/cifar10"
 
 
 if dataset == "cifar100":
@@ -66,8 +66,8 @@ elif dataset == "stl10":
         root=dataset_folder, split="test", download=download, transform=None
     )
 
-train_beton_fpath = os.path.join(ffcv_folder, "cifar_train.beton")
-test_beton_fpath = os.path.join(ffcv_folder, "cifar_test.beton")
+train_beton_fpath = os.path.join(ffcv_folder, f"{dataset}_train.beton")
+test_beton_fpath = os.path.join(ffcv_folder, f"{dataset}_test.beton")
 
 ## WRITE TO BETON FILES
 if write_dataset:
@@ -111,7 +111,7 @@ for name in ["train", "test"]:
     )
 
     loaders[name] = Loader(
-        os.path.join(ffcv_folder, "cifar_{}.beton".format(name)),
+        os.path.join(ffcv_folder, "{}_{}.beton".format(dataset, name)),
         batch_size=BATCH_SIZE,
         num_workers=1,
         order=OrderOption.SEQUENTIAL,
