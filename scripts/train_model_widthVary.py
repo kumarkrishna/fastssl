@@ -134,7 +134,7 @@ def build_dataloaders(
                 num_workers,
                 num_augmentations=num_augmentations,
             )
-        elif algorithm == "linear":
+        elif algorithm in ["xent", "linear"]:
             default_linear_bsz = 512
             # dataloader for classifier
             return cifar_classifier_ffcv(
@@ -171,7 +171,8 @@ def build_dataloaders(
 
 def gen_ckpt_path(args, eval_args, epoch=100, prefix="exp", suffix="pth"):
     if suffix == "pth":
-        main_dir = os.environ["SLURM_TMPDIR"]
+        # main_dir = os.environ["SLURM_TMPDIR"]
+        main_dir = args.ckpt_dir
         ckpt_dir = main_dir
         ckpt_path = os.path.join(
             ckpt_dir,
@@ -190,7 +191,8 @@ def gen_ckpt_path(args, eval_args, epoch=100, prefix="exp", suffix="pth"):
     else:
         if "precache" in prefix:
             # save precache features/embeddings in $SLURM_TMPDIR
-            main_dir = os.path.join(os.environ["SLURM_TMPDIR"],'feats')
+            # main_dir = os.path.join(os.environ["SLURM_TMPDIR"],'feats')
+            main_dir = os.path.join(args.ckpt_dir, 'feats')
         else:
             main_dir = args.ckpt_dir
         model_name = args.model
@@ -243,6 +245,8 @@ def gen_ckpt_path(args, eval_args, epoch=100, prefix="exp", suffix="pth"):
             ckpt_dir = os.path.join(
                 ckpt_dir, "{}_augs_eval".format(args.num_augmentations)
             )
+        if args.algorithm == "xent":
+            ckpt_dir = os.path.join(main_dir, "xent")
         # create ckpt file name
         ckpt_path = os.path.join(
             ckpt_dir,
@@ -284,8 +288,10 @@ def build_model(args=None):
             model_args["hidden_dim"] = training.projector_dim
             model_cls = bt.BarlowTwins
 
-    elif training.algorithm == "linear":
+    elif training.algorithm in ["xent", "linear"]:
         ckpt_path = gen_ckpt_path(training, eval, epoch=args.eval.epoch)
+        if training.algorithm == "xent":
+            ckpt_path = None
         if eval.use_precache:
             model_type = ""
         else:
@@ -311,6 +317,7 @@ def build_model(args=None):
                 feat_dim = 2048
         model_args = {
             "bkey": model_type,
+            "freeze_backbone": training.algorithm == "linear",
             "ckpt_path": ckpt_path,
             "dataset": training.dataset,
             # "feat_dim": training.projector_dim if "proj" in training.model else 2048,
@@ -334,7 +341,7 @@ def build_loss_fn(args=None):
         return byol.BYOLLoss
     elif args.algorithm == "SimCLR":
         return partial(simclr.SimCLRLoss, _temperature=args.temperature)
-    elif args.algorithm == "linear":
+    elif args.algorithm in ["xent", "linear"]:
 
         def classifier_xent(model, inp):
             inp = list(inp)
@@ -366,7 +373,7 @@ def build_optimizer(model, args=None):
     """
     if args.algorithm in ("BarlowTwins", "SimCLR", "ssl", "byol"):
         return Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
-    elif args.algorithm == "linear":
+    elif args.algorithm in ["xent", "linear"]:
         default_lr = 1e-3
         default_weight_decay = 1e-6
         return Adam(
@@ -434,7 +441,7 @@ def train_step(
             with autocast():
                 if args.algorithm == "byol":
                     loss = loss_fn(model, target_model, inp)
-                elif args.algorithm in ("BarlowTwins", "SimCLR", "ssl", "linear"):
+                elif args.algorithm in ("BarlowTwins", "SimCLR", "ssl","xent",  "linear"):
                     loss = loss_fn(model, inp)
                 else:
                     raise Exception("Algorithm not implemented")
@@ -566,6 +573,17 @@ def precache_outputs(model, loaders, args, eval_args):
     }
     return output_dict
 
+def get_rankme(eigvals):
+    l1 = np.sum(np.abs(eigvals))
+    eps = 1e-7
+    scores = eigvals / l1 + eps
+    entropy = - np.sum(scores * np.log(scores))
+
+    softrank = l1 / np.max(np.abs(eigvals))
+    stable_rank = np.sum(eigvals**2) / np.max(np.abs(eigvals))**2
+
+    return np.exp(entropy), softrank, stable_rank
+
 
 def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False):
     if args.track_alpha:
@@ -578,6 +596,9 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False):
             "eigenspectrum": [],
             "alpha": [],
             "R2": [],
+            "rankme": [],
+            "softrank": [],
+            "stablerank": [],
             "R2_100": [],
         }
     else:
@@ -585,13 +606,13 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False):
                    "train_acc_1": [], "train_acc_5": [], 
                    "test_acc_1": [], "test_acc_5": []}
 
-    if args.algorithm == "linear":
+    if args.algorithm in ["xent", "linear"]:
         if args.use_autocast:
             with autocast():
                 activations = powerlaw.generate_activations_prelayer(
                     net=model,
                     layer=model.fc,
-                    data_loader=loaders["test"],
+                    data_loader=loaders["train"],
                     use_cuda=True,
                 )
                 activations_eigen = powerlaw.get_eigenspectrum(activations)
@@ -599,8 +620,9 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False):
                     alpha, ypred, R2, R2_100 = powerlaw.stringer_get_powerlaw(
                         activations_eigen, trange=np.arange(3, 50)
                     )
+                    rankme, softrank, stablerank = get_rankme(activations_eigen)
                 except:
-                    alpha, R2, R2_100 = np.nan, np.nan, np.nan
+                    alpha, R2, R2_100, rankme  = np.nan, np.nan, np.nan, np.nan
                 # debug_plot(activations_eigen,alpha,ypred,R2,R2_100,'test_full_early_{:.4f}.png'.format(args.lambd))
                 # save_path = gen_ckpt_path(args, args.algorithm, args.epochs, 'results_{}_full_early_alpha'.format(args.dataset), 'npy')
                 # np.save(save_path,dict(alpha=alpha,R2=R2,R2_100=R2_100))
@@ -608,6 +630,9 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False):
                 results["eigenspectrum"] = activations_eigen
                 results["alpha"] = alpha
                 results["R2"] = R2
+                results["softrank"] = softrank
+                results["stablerank"] = stablerank
+                results["rankme"] = rankme
                 results["R2_100"] = R2_100
                 print("Initial alpha", results["alpha"])
         else:
@@ -643,7 +668,7 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False):
             activations = powerlaw.generate_activations_prelayer(
                 net=model,
                 layer=model.backbone.proj,
-                data_loader=loaders["test"],
+                data_loader=loaders["train"],
                 use_cuda=True,
             )
             activations_eigen = powerlaw.get_eigenspectrum(activations)
@@ -669,7 +694,7 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False):
 
         results["train_loss"].append(train_loss)
 
-        if args.algorithm == "linear":
+        if args.algorithm in ["xent", "linear"]:
             acc_1, acc_5 = eval_step(
                 model, loaders["test"], epoch=epoch, epochs=args.epochs
             )

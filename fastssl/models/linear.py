@@ -17,6 +17,7 @@ class LinearClassifier(nn.Module):
         dataset="cifar10",
         bkey="resnet50feat",
         ckpt_path=None,
+        freeze_backbone=True,
         ckpt_epoch=None,
         feat_dim=2048,
         proj_hidden_dim=128,
@@ -27,7 +28,7 @@ class LinearClassifier(nn.Module):
         self.dataset = dataset
         self.feat_dim = feat_dim
         self.proj_hidden_dim = proj_hidden_dim
-
+        self.freeze_backbone = freeze_backbone
         if len(self.bkey) > 0:
             # define model : backbone(resnet50modified)
             self.backbone = BackBone(
@@ -38,7 +39,7 @@ class LinearClassifier(nn.Module):
             )
 
             # load pretrained weights
-            self.load_backbone(ckpt_path, requires_grad=False)
+            self.load_backbone(ckpt_path, requires_grad=not self.freeze_backbone)
         else:
             # not using any backbone
             self.backbone = nn.Identity()
