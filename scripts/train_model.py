@@ -38,11 +38,11 @@ from fastargs import Section, Param
 from fastssl.data import (
     cifar_ffcv,
     cifar_classifier_ffcv,
-    cifar_pt,
     stl_ffcv,
-    stl10_pt,
     stl_classifier_ffcv,
     simple_dataloader,
+    imagenet_ffcv,
+    imagenet_classifier_ffcv,
 )
 from fastssl.models import barlow_twins as bt
 from fastssl.models import linear, byol, simclr, vicreg
@@ -175,6 +175,33 @@ def build_dataloaders(
             )
         else:
             raise Exception("Algorithm not implemented")
+    elif dataset == "imagenet":
+        if algorithm in ("BarlowTwins", "SimCLR", "ssl", "byol", "VICReg"):
+            # return stl10_pt(
+            #     datadir,
+            #     splits=["unlabeled"],
+            #     batch_size=batch_size,
+            #     num_workers=num_workers)
+            # return stl_ffcv(train_dataset, val_dataset, batch_size, num_workers)
+            return imagenet_ffcv(
+                train_dataset,
+                val_dataset,
+                batch_size,
+                num_workers,
+                num_augmentations=num_augmentations,
+            )
+        elif algorithm == "linear":
+            default_linear_bsz = 256
+            # return stl_classifier_ffcv(
+            #     train_dataset, val_dataset, default_linear_bsz, num_workers
+            # )
+            return imagenet_classifier_ffcv(
+                train_dataset,
+                val_dataset,
+                default_linear_bsz,
+                num_workers,
+                num_augmentations=num_augmentations,
+            )
     else:
         raise Exception("Dataset {} not supported".format(dataset))
 
