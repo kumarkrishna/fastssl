@@ -30,11 +30,9 @@ from fastssl.data.cifar_transforms import (
 
 import numpy as np
 
-IMG_SIZE = 64 #224
-DEFAULT_CROP_RATIO = 64/256 #224/256
+IMG_SIZE = 96 #224
+DEFAULT_CROP_RATIO = 96/256 #224/256
 
-IMAGENET_MEAN = np.array([0.485, 0.456, 0.406]) * 255
-IMAGENET_STD = np.array([0.229, 0.224, 0.225]) * 255
 
 def to_device(device):
     if device == "cuda:0":

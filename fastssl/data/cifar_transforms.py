@@ -28,6 +28,8 @@ STL_FFCV_MEAN = [113.9112, 112.1515, 103.6948]
 STL_FFCV_STD = [57.1603, 56.4828, 57.0975]
 IMAGENET_FFCV_MEAN = np.array([0.485, 0.456, 0.406]) * 255
 IMAGENET_FFCV_STD = np.array([0.229, 0.224, 0.225]) * 255
+# IMAGENET_FFCV_MEAN = np.array([0.0, 0.0, 0.0]) * 255
+# IMAGENET_FFCV_STD = np.array([1.0, 1.0, 1.0]) * 255
 
 class ReScale(nn.Module):
     def __init__(self, scale):
@@ -160,7 +162,7 @@ class ImagenetTransformFFCV():
                                 # transforms.GaussianBlur(kernel_size=(5, 9), 
                                 #                         sigma=(0.1, 2))
                                 ]
-        self.dataset_side_length = 64 #224
+        self.dataset_side_length = 96 #224
         self.dataset_resize_scale = (0.08, 1.0) #(0.2,1.0)
         self.dataset_resize_ratio = (0.75,4/3)
 
