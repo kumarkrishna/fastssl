@@ -160,9 +160,9 @@ class ImagenetTransformFFCV():
                                 # transforms.GaussianBlur(kernel_size=(5, 9), 
                                 #                         sigma=(0.1, 2))
                                 ]
-        self.dataset_side_length = 224
-        self.dataset_resize_scale = None #(0.2,1.0)
-        self.dataset_resize_ratio = None #(0.75,4/3)
+        self.dataset_side_length = 64 #224
+        self.dataset_resize_scale = (0.08, 1.0) #(0.2,1.0)
+        self.dataset_resize_ratio = (0.75,4/3)
 
 
 class CifarClassifierTransform(nn.Module):
@@ -197,20 +197,16 @@ class STLClassifierTransform(nn.Module):
         return self.transform(x)
     
 
-class ImagenetClassifierTransform(nn.Module):
+class ImagenetClassifierTransform():
     """
     Generates transformed images, primarily for image classification.
     """
     def __init__(self):
-        super().__init__()
-        self.transform = transforms.Compose([
+        self.transform_list = [
             # transforms.ConvertImageDtype(torch.float32),
             NormalizeImage(mean=IMAGENET_FFCV_MEAN, 
                            std=IMAGENET_FFCV_STD, type=np.float16)
-        ])
-
-    def forward(self, x):
-        return self.transform(x)
+        ]
 
 
 # transforms for pytorch dataloaders
