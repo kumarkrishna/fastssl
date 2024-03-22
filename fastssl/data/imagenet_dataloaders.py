@@ -13,6 +13,7 @@ from ffcv.transforms import (
     Squeeze, 
     ToDevice, 
     ToTensor, 
+    Convert,
     NormalizeImage,
     ToTorchImage, 
     RandomResizedCrop
@@ -29,7 +30,8 @@ from fastssl.data.cifar_transforms import (
 
 import numpy as np
 
-DEFAULT_CROP_RATIO = 224/256
+IMG_SIZE = 64 #224
+DEFAULT_CROP_RATIO = 64/256 #224/256
 
 IMAGENET_MEAN = np.array([0.485, 0.456, 0.406]) * 255
 IMAGENET_STD = np.array([0.229, 0.224, 0.225]) * 255
@@ -43,7 +45,7 @@ def to_device(device):
 
 def gen_image_pipeline(device="cuda:0", transform_cls=None):
     image_pipeline: List[Operation] = [
-        CenterCropRGBImageDecoder(),
+        CenterCropRGBImageDecoder((IMG_SIZE,IMG_SIZE), ratio=DEFAULT_CROP_RATIO),
         ToTensor(),
         to_device(device),
         ToTorchImage(),
@@ -52,7 +54,7 @@ def gen_image_pipeline(device="cuda:0", transform_cls=None):
     ]
 
     if transform_cls:
-        image_pipeline.append(transform_cls())
+        image_pipeline.extend(transform_cls().transform_list)
 
     return image_pipeline
 
@@ -82,7 +84,7 @@ def gen_image_pipeline_ffcv_ssl(device="cuda:0", transform_cls=None):
             to_device(device),
             ToTorchImage(),
             # Convert(torch.float32),
-            NormalizeImage(IMAGENET_MEAN, IMAGENET_STD, np.float16),
+            # NormalizeImage(IMAGENET_MEAN, IMAGENET_STD, np.float16),
             # transforms.GaussianBlur(kernel_size=(5, 9), sigma=(0.1, 2))
         ]
     )
