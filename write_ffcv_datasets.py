@@ -17,11 +17,13 @@ from ffcv.transforms import (
     ToDevice,
     ToTensor,
     ToTorchImage,
+    RandomResizedCrop,
 )
 from ffcv.transforms.common import Squeeze
 
 
 write_dataset = False
+upscale = False # upscale images to 224x224 resolution
 
 dataset = "stl10"
 
@@ -96,7 +98,16 @@ for name in ["train", "test"]:
         ToTensor(),
         Squeeze(),
     ]  # ToDevice('cuda:0'),
-    image_pipeline: List[Operation] = [SimpleRGBImageDecoder()]
+    if upscale:
+        image_pipeline: List[Operation] = [
+            RandomResizedCropRGBImageDecoder(
+                output_size=(224, 224),
+                scale=(0.08, 1.0),
+                ratio=(0.4, 0.1),
+            )
+        ]
+    else:
+        image_pipeline: List[Operation] = [SimpleRGBImageDecoder()]
 
     image_pipeline.extend(
         [
@@ -119,6 +130,8 @@ for name in ["train", "test"]:
     )
 
 transform_test = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
+if upscale:
+    transform_test.insert(0, torchvision.transforms.Resize(224, 224))
 
 if dataset == "cifar100":
     trainset = torchvision.datasets.CIFAR100(

@@ -4,6 +4,7 @@ import numpy as np
 import torch
 from copy import deepcopy
 from fastssl.models.resnets import ResNet18, ResNet50
+from fastssl.models.vit import ViT, ViTSmall, ViTTiny
 
 class BackBone(nn.Module):
     def __init__(self,
@@ -34,6 +35,24 @@ class BackBone(nn.Module):
                 base_width = int(self.name.split('_width')[-1])
             self._resnet18mod(base_width, dataset)
             self.feat_dim = 8*base_width
+        elif 'vitt' in self.name:
+            base_width = 64
+            if len(self.name.split('_width'))>1:
+                base_width = int(self.name.split('_width')[-1])
+            self._vittmod(base_width, dataset)
+            self.feat_dim = 3*base_width
+        elif 'vits' in self.name:
+            base_width = 64
+            if len(self.name.split('_width'))>1:
+                base_width = int(self.name.split('_width')[-1])
+            self._vitsmod(base_width, dataset)
+            self.feat_dim = 4*base_width
+        elif 'vit' in self.name:
+            base_width = 64
+            if len(self.name.split('_width'))>1:
+                base_width = int(self.name.split('_width')[-1])
+            self._vitmod(base_width, dataset)
+            self.feat_dim = 6*base_width
         else:
             num_layers = int(self.name.split('_')[-1]) if len(self.name.split('_'))>1 else 2
             self.name = self.name.split('_')[0] if len(self.name.split('_'))>1 else self.name
@@ -74,6 +93,18 @@ class BackBone(nn.Module):
             if self.is_valid_layer(module, dataset):
                 backbone.append(module)
         self.feats = nn.Sequential(*backbone)
+        
+    def _vittmod(self, base_width, dataset):
+        # num_classes=0 disables classifier head
+        self.feats = ViTTiny(width=base_width, num_classes=0)
+        
+    def _vitsmod(self, base_width, dataset):
+        # num_classes=0 disables classifier head
+        self.feats = ViTSmall(width=base_width, num_classes=0)
+        
+    def _vitmod(self, base_width, dataset):
+        # num_classes=0 disables classifier head
+        self.feats = ViT(width=base_width, num_classes=0)
 
     def _shallowConvmod(self,dataset,layers=2):
         assert layers%2==0, "Set number of layers for shallow Conv to be even, currently {}".format(layers)

@@ -5,6 +5,17 @@ from sklearn.decomposition import PCA
 from sklearn.metrics import r2_score
 import torch
 
+from threadpoolctl import threadpool_limits
+
+def rankme(eigen):
+    """ Compute rankme score given a covariance eigenspectrum
+    """
+    l1 = np.sum(np.abs(eigen))
+    eps = 1e-7
+    scores = eigen / l1 + eps
+    entropy = - np.sum(scores * np.log(scores))
+    return np.exp(entropy)
+
 
 def fit_powerlaw(arr, start, end):
     x_range = np.arange(start, end + 1).astype(int)
@@ -63,7 +74,8 @@ def generate_activations_prelayer(net,layer,data_loader,use_cuda=False,dim_thres
     if use_cuda:
         net = net.cuda()    
     net.eval()
-    for i, (images, labels) in enumerate(tqdm(data_loader)):
+    for i, inp in enumerate(tqdm(data_loader)):
+        (images, labels) = (inp[0], inp[1]) # discarding any extra item from the batch
         if use_cuda:
             images = images.cuda()
         with torch.no_grad():
@@ -73,6 +85,36 @@ def generate_activations_prelayer(net,layer,data_loader,use_cuda=False,dim_thres
     handle.remove()
     activations_np = np.vstack(activations)     # assuming first dimension is num_examples: batches x batch_size x <feat_dims> --> num_examples x <feat_dims>
     return activations_np
+
+def generate_activations_prelayer_torch(net,layer,data_loader,use_cuda=False,dim_thresh=10000,test_run=False):
+    pool_size = 1
+    activations = []
+    def hook_fn(m,i,o):
+        activations.append(i[0])
+    handle = layer.register_forward_hook(hook_fn)
+
+    if use_cuda:
+        net = net.cuda()
+    net.eval()
+    for i, inp in enumerate(tqdm(data_loader)):
+        (images, labels) = (inp[0], inp[1]) # discarding any extra item from the batch
+        if use_cuda:
+            images = images.cuda()
+        with torch.no_grad():
+            output = net(images)
+        if i==10 and test_run:
+            break
+    handle.remove()
+    activations_torch = torch.vstack(activations)     # assuming first dimension is num_examples: batches x batch_size x <feat_dims> --> num_examples x <feat_dims>
+    del activations
+    return activations_torch
+
+def get_eigenspectrum_torch(activations,max_eigenvals=2048):
+    feats = activations.reshape(activations.shape[0],-1)
+    feats_center = feats - feats.mean(dim=0)
+    covariance = feats_center.T @ feats_center / activations.shape[0]
+    eigenspectrum = torch.linalg.svdvals(covariance).cpu().numpy()
+    return eigenspectrum
 
 def generate_activations_prelayer_batch(net,layer,images,pool_transform=None):
     activations = []
@@ -86,13 +128,13 @@ def generate_activations_prelayer_batch(net,layer,images,pool_transform=None):
     return activations[0]
 
 def get_eigenspectrum(activations_np,max_eigenvals=2048):
-    feats = activations_np.reshape(activations_np.shape[0],-1)
-    feats_center = feats - feats.mean(axis=0)
-    pca = PCA(n_components=min(max_eigenvals, feats_center.shape[0], feats_center.shape[1]), svd_solver='full')
-    pca.fit(feats_center)
-    eigenspectrum = pca.explained_variance_ratio_
+    with threadpool_limits(limits=1):
+        feats = activations_np.reshape(activations_np.shape[0],-1)
+        feats_center = feats - feats.mean(axis=0)
+        pca = PCA(n_components=min(max_eigenvals, feats_center.shape[0], feats_center.shape[1]), svd_solver='full')
+        pca.fit(feats_center)
+        eigenspectrum = pca.explained_variance_ratio_
     return eigenspectrum
-
 
 def stringer_get_powerlaw_batch(net, layer, data_loader, trange, use_cuda=False, test_run=False):
     alpha_arr = []
@@ -101,7 +143,8 @@ def stringer_get_powerlaw_batch(net, layer, data_loader, trange, use_cuda=False,
     if use_cuda:
         net = net.cuda()
     net.eval()
-    for i, (images, labels) in enumerate(tqdm(data_loader)):
+    for i, inp in enumerate(tqdm(data_loader)):
+        (images, labels) = (inp[0], inp[1]) # discarding any extra item from the batch
         # ignore last batch if incomplete
         # print(i,len(data_loader),len(images),data_loader.batch_size)
         if i == len(data_loader) - 1 and len(images) < data_loader.batch_size:
