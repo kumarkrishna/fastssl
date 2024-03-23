@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-#SBATCH --array=0-7%20
+#####SBATCH --array=0-7%20
+#SBATCH --array=0-13%10
 #SBATCH --partition=long
 #SBATCH --gres=gpu:a100:1
 #SBATCH --mem=36GB
@@ -16,20 +17,30 @@ alias python=$HOME/.conda/envs/ffcv_new/bin/python
 WANDB__SERVICE_WAIT=300
 which python
 
-# lambd_arr=(0.0002 0.0004 0.0008 0.001 0.002 0.004 0.008 0.01 0.02 0.04)
-lambd_arr=(0.005)
-# pdim_arr=(64 128 256 512 1024 2048 4096 8192)
-# rewriting the order to make sure the jobs are well distributed
-pdim_arr=(32 64 4096 128 2048 256 1024 512)
-dataset='imagenet'
-batch_size=512
+# # lambd_arr=(0.0002 0.0004 0.0008 0.001 0.002 0.004 0.008 0.01 0.02 0.04)
+# lambd_arr=(0.005)
+# # pdim_arr=(32 64 128 256 512 1024 2048 4096)
+# # rewriting the order to make sure the jobs are well distributed
+# pdim_arr=(32 64 4096 128 2048 256 1024 512)
+# lenL=${#lambd_arr[@]}
+# lenP=${#pdim_arr[@]}
+# pidx=$((SLURM_ARRAY_TASK_ID/lenL))
+# lidx=$((SLURM_ARRAY_TASK_ID%lenL))
 
+# lambd_arr=(0.5 0.05 0.3 0.04 0.1 0.03 0.08 0.02 0.04 0.014 0.02 0.01 0.01 0.007)
+# pdim_arr=(32 32 64 64 128 128 256 256 512 512 1024 1024 2048 2048)
+# rewriting the order to make sure the jobs are well distributed
+lambd_arr=(0.5 0.05 0.01 0.007 0.3 0.04 0.02 0.01 0.1 0.03 0.08 0.02 0.04 0.014)
+pdim_arr=(32 32 2048 2048 64 64 1024 1024 128 128 256 256 512 512)
 lenL=${#lambd_arr[@]}
 lenP=${#pdim_arr[@]}
-pidx=$((SLURM_ARRAY_TASK_ID/lenL))
-lidx=$((SLURM_ARRAY_TASK_ID%lenL))
+pidx=$SLURM_ARRAY_TASK_ID
+lidx=$SLURM_ARRAY_TASK_ID
+
 lambd=${lambd_arr[$lidx]}
 pdim=${pdim_arr[$pidx]}
+dataset='imagenet'
+batch_size=512
 
 wandb_group='blake-richards'
 wandb_projname='Barlow-resnet18-hparam-imagenet'
