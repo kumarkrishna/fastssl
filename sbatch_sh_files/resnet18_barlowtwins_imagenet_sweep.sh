@@ -43,7 +43,7 @@ model=resnet18proj
 epochs=30
 log_epochs=5
 # Let's train a SSL (BarlowTwins) model with the above hyperparams
-/home/mila/g/ghosharn/.conda/envs/ffcv_new/bin/python scripts/train_model.py \
+/home/mila/g/ghosharn/.conda/envs/ffcv_new/bin/python scripts/train_model_imagenet.py \
                 --config-file configs/cc_barlow_twins.yaml \
                 --training.model=$model --training.dataset=$dataset \
                 --training.lambd=$lambd --training.projector_dim=$pdim \
