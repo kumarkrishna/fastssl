@@ -16,7 +16,7 @@ from ffcv.transforms import (
     Convert,
     ToDevice,
     ToTensor,
-    ToTorchImage,
+    ToTorchImage
 )
 from ffcv.transforms.common import Squeeze
 

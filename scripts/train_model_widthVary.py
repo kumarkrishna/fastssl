@@ -45,7 +45,7 @@ from fastssl.data import (
     simple_dataloader,
 )
 from fastssl.models import barlow_twins as bt
-from fastssl.models import linear, byol, simclr
+from fastssl.models import linear, byol, simclr, vicreg
 
 from fastssl.utils.base import (
     set_seeds, 
@@ -56,6 +56,7 @@ from fastssl.utils.base import (
     log_wandb
 )
 import fastssl.utils.powerlaw as powerlaw
+from fastssl.utils.jacobian import input_jacobian
 
 Section("training", "Fast CIFAR-10 training").params(
     dataset=Param(str, "dataset", default="cifar10"),
@@ -70,7 +71,8 @@ Section("training", "Fast CIFAR-10 training").params(
     epochs=Param(int, "epochs", default=100),
     lr=Param(float, "learning-rate", default=1e-3),
     weight_decay=Param(float, "weight_decay", default=1e-6),
-    lambd=Param(float, "lambd for BarlowTwins", default=1 / 128),
+    lambd=Param(float, "lambd for BarlowTwins/VICReg", default=1 / 128),
+    mu=Param(float, "mu for VICReg", default=25.0),
     momentum_tau=Param(float, "momentum_tau for BYOL", default=0.01),
     temperature=Param(float, "temperature for SimCLR", default=0.01),
     seed=Param(int, "seed", default=1),
@@ -83,8 +85,12 @@ Section("training", "Fast CIFAR-10 training").params(
     ckpt_dir=Param(
         str, "ckpt-dir", default="/data/krishna/research/results/0319/001/checkpoints"
     ),
-    use_autocast=Param(bool, "autocast fp16", default=True),
+    use_autocast=Param(bool, "autocast fp16", default=False),
     track_alpha=Param(bool, "Track evolution of alpha", default=False),
+    track_jacobian=Param(bool, "Track input Jacobian of the last feature layer", default=False),
+    jacobian_bigmem=Param(bool, "Use fast memory-expensive Jacobian computation algorithm, which explicitly instantiates the Jacobian tensor", default=False),
+    jacobian_batch_size=Param(int, "Batch size to use for Jacobian computation.", default=128),
+    jacobian_nsamples=Param(int, "Number of training samples to use for Jacobian computation. Set to 0 to use all samples (default = 0)", default=0),
     precache=Param(bool, "Precache outputs of network", default=False),
     adaptive_ssl=Param(bool, "Use alpha to regularize SSL loss", default=False),
     num_augmentations=Param(int, "Number of augmentations to use per image", default=2),
@@ -97,6 +103,7 @@ Section("eval", "Fast CIFAR-10 evaluation").params(
     num_augmentations_pretrain=Param(
         int, "Number of augmentations used for pretraining", default=2
     ),
+    jacobian_only=Param(bool, "Load model weights and compute input Jacobian of the last feature layer", default=False),
 )
 
 Section("logging", "Fast CIFAR-10 logging options").params(
@@ -120,10 +127,10 @@ def build_dataloaders(
         # using precached features!!
         print("Using simple dataloader")
         return simple_dataloader(
-            train_dataset, val_dataset, batch_size=batch_size, num_workers=num_workers
+            train_dataset, val_dataset, batch_size=batch_size, num_workers=num_workers,
         )
     if "cifar" in dataset:
-        if algorithm in ("BarlowTwins", "SimCLR", "ssl", "byol"):
+        if algorithm in ("BarlowTwins", "SimCLR", "ssl", "byol", "VICReg"):
             # return cifar_pt(
             #     datadir, batch_size=batch_size, num_workers=num_workers)
             # for ffcv cifar10 dataloader
@@ -147,17 +154,27 @@ def build_dataloaders(
         else:
             raise Exception("Algorithm not implemented")
     elif dataset == "stl10":
-        if algorithm in ("BarlowTwins", "SimCLR", "ssl", "byol"):
+        if algorithm in ("BarlowTwins", "SimCLR", "ssl", "byol", "VICReg"):
             # return stl10_pt(
             #     datadir,
             #     splits=["unlabeled"],
             #     batch_size=batch_size,
             #     num_workers=num_workers)
-            return stl_ffcv(train_dataset, val_dataset, batch_size, num_workers)
+            return stl_ffcv(
+                train_dataset,
+                val_dataset,
+                batch_size,
+                num_workers,
+                num_augmentations=num_augmentations,
+            )
         elif algorithm == "linear":
             default_linear_bsz = 256
             return stl_classifier_ffcv(
-                train_dataset, val_dataset, default_linear_bsz, num_workers
+                train_dataset,
+                val_dataset,
+                default_linear_bsz,
+                num_workers,
+                num_augmentations=num_augmentations,
             )
             # datadir,
             # splits=["train", "test"],
@@ -197,7 +214,7 @@ def gen_ckpt_path(args, eval_args, epoch=100, prefix="exp", suffix="pth"):
         model_name = model_name.replace("proj", "")
         model_name = model_name.replace("feat", "")
         main_dir = os.path.join(main_dir, model_name)
-        if 'resnet18' in model_name:
+        if 'resnet18' in model_name or 'resnet50' in model_name:
             base_width = int(model_name.split('_width')[-1])
             # replace the _width{base_width} part in model name part of main_dir
             main_dir = main_dir.replace(f"_width{base_width}","")
@@ -225,11 +242,36 @@ def gen_ckpt_path(args, eval_args, epoch=100, prefix="exp", suffix="pth"):
                     args.weight_decay,
                 ),
             )
+        elif dir_algorithm in ["byol"]:
+            ckpt_dir = os.path.join(
+                main_dir,
+                "tau_{:.3f}_pdim_{}{}_bsz_{}_lr_{}_wd_{}".format(
+                    args.momentum_tau,
+                    args.projector_dim,
+                    "_no_autocast" if not args.use_autocast else "",
+                    args.batch_size,
+                    args.lr,
+                    args.weight_decay,
+                ),
+            )
         elif dir_algorithm in ["SimCLR"]:
             ckpt_dir = os.path.join(
                 main_dir,
                 "temp_{:.3f}_pdim_{}{}_bsz_{}_lr_{}_wd_{}".format(
                     args.temperature,
+                    args.projector_dim,
+                    "_no_autocast" if not args.use_autocast else "",
+                    args.batch_size,
+                    args.lr,
+                    args.weight_decay,
+                ),
+            )
+        elif dir_algorithm in ["VICReg"]:
+            ckpt_dir = os.path.join(
+                main_dir,
+                "lambd_{:.3f}_mu_{:.3f}_pdim_{}{}_bsz_{}_lr_{}_wd_{}".format(
+                    args.lambd,
+                    args.mu,
                     args.projector_dim,
                     "_no_autocast" if not args.use_autocast else "",
                     args.batch_size,
@@ -266,12 +308,16 @@ def build_model(args=None):
     training = args.training
     eval = args.eval
 
-    if training.algorithm in ("BarlowTwins", "SimCLR", "ssl", "byol"):
+    if training.algorithm in ("BarlowTwins", "SimCLR", "ssl", "byol", "VICReg"):
         model_args = {
             "bkey": training.model,
             "dataset": training.dataset,
             "projector_dim": training.projector_dim,
         }
+
+        if eval.jacobian_only:
+            ckpt_path = gen_ckpt_path(training, eval, epoch=args.training.epoch)
+            model_args["ckpt_path"] = ckpt_path
 
         if training.algorithm in ("byol"):
             model_args["hidden_dim"] = training.hidden_dim
@@ -280,6 +326,10 @@ def build_model(args=None):
             # setting projector dim and hidden dim the same for SimCLR projector
             model_args["hidden_dim"] = training.projector_dim
             model_cls = simclr.SimCLR
+        elif training.algorithm in ("VICReg"):
+            # setting projector dim and hidden dim the same for VICReg projector
+            model_args["hidden_dim"] = training.projector_dim
+            model_cls = vicreg.VICReg
         else:
             model_args["hidden_dim"] = training.projector_dim
             model_cls = bt.BarlowTwins
@@ -309,6 +359,12 @@ def build_model(args=None):
                 feat_dim = 32*base_width
             else:
                 feat_dim = 2048
+        
+        if training.dataset in ["cifar10", "stl10"]:
+            num_classes = 10
+        else:
+            num_classes = 100
+        
         model_args = {
             "bkey": model_type,
             "ckpt_path": ckpt_path,
@@ -318,7 +374,7 @@ def build_model(args=None):
             "proj_hidden_dim": training.hidden_dim
             if eval.train_algorithm in ("byol")
             else training.projector_dim,
-            "num_classes": 10 if training.dataset in ["cifar10", "stl10"] else 100,
+            "num_classes": num_classes,
         }
         model_cls = linear.LinearClassifier
 
@@ -334,6 +390,8 @@ def build_loss_fn(args=None):
         return byol.BYOLLoss
     elif args.algorithm == "SimCLR":
         return partial(simclr.SimCLRLoss, _temperature=args.temperature)
+    elif args.algorithm == "VICReg":
+        return partial(vicreg.VICRegLoss, _lambda=args.lambd, _mu=args.mu)
     elif args.algorithm == "linear":
 
         def classifier_xent(model, inp):
@@ -364,17 +422,28 @@ def build_optimizer(model, args=None):
     Returns:
         optimizer : optimizer for training model
     """
-    if args.algorithm in ("BarlowTwins", "SimCLR", "ssl", "byol"):
-        return Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+    scheduler = None
+    if args.algorithm in ("BarlowTwins", "SimCLR", "ssl", "byol", "VICReg"):
+        opt = Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+#    elif args.algorithm == "linear":
+#        default_lr = 1e-3
+#        default_weight_decay = 1e-6
+#        return Adam(
+#            model.parameters(), lr=default_lr, weight_decay=default_weight_decay
+#        )
     elif args.algorithm == "linear":
-        default_lr = 1e-3
-        default_weight_decay = 1e-6
-        return Adam(
+        default_lr = 1e-1
+        default_weight_decay = 0
+        lr_decay = 0.95
+        opt = SGD(
             model.parameters(), lr=default_lr, weight_decay=default_weight_decay
         )
+        lr_lambda = lambda epoch : lr_decay
+        scheduler = lr_scheduler.MultiplicativeLR(opt, lr_lambda=lr_lambda)
     else:
         raise Exception("Algorithm not implemented")
 
+    return opt, scheduler
 
 # def save_images(img1,img2,name):
 #     import matplotlib.pyplot as plt
@@ -394,6 +463,7 @@ def train_step(
     loss_fn=None,
     scaler=None,
     epoch=None,
+    scheduler=None,
 ):
     """
     Generic trainer.
@@ -434,7 +504,7 @@ def train_step(
             with autocast():
                 if args.algorithm == "byol":
                     loss = loss_fn(model, target_model, inp)
-                elif args.algorithm in ("BarlowTwins", "SimCLR", "ssl", "linear"):
+                elif args.algorithm in ("BarlowTwins", "SimCLR", "ssl", "linear", "VICReg"):
                     loss = loss_fn(model, inp)
                 else:
                     raise Exception("Algorithm not implemented")
@@ -456,11 +526,14 @@ def train_step(
         # import ray
         # if ray.tune.is_session_enabled():
         #     tune.report(epoch=epoch, loss=total_loss/num_batches)
+        lr = optimizer.param_groups[0]['lr'] if scheduler is None else scheduler.get_last_lr()[0]
         train_bar.set_description(
-            "Train Epoch: [{}/{}] Loss: {:.4f}".format(
-                epoch, args.epochs, total_loss / num_batches
+            "Train Epoch: [{}/{}] Lr: {:.4f} Loss: {:.4f}".format(
+                epoch, args.epochs, lr, total_loss / num_batches
             )
         )
+    if scheduler is not None:
+        scheduler.step()
     return total_loss / num_batches
 
 
@@ -513,7 +586,11 @@ def precache_outputs(model, loaders, args, eval_args):
     model.eval()
     trainset_outputs = []
     trainset_labels = []
+    trainset_ground_truths = []
+    trainset_sample_ids = []
     train_bar = tqdm(loaders["train"], desc="Train set")
+    noise_ratio = 0.
+    num_samples = 0
     for inp in train_bar:
         # for data, target in train_bar:
         inp = list(inp)
@@ -564,10 +641,11 @@ def precache_outputs(model, loaders, args, eval_args):
             "labels": testset_labels.cpu().numpy(),
         },
     }
+
     return output_dict
 
 
-def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False):
+def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, scheduler=None):
     if args.track_alpha:
         results = {
             "train_loss": [],
@@ -575,32 +653,43 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False):
             "train_acc_5": [],
             "test_acc_1": [],
             "test_acc_5": [],
+            "lr" : [],
             "eigenspectrum": [],
             "alpha": [],
             "R2": [],
             "R2_100": [],
+            "effective_rank": [],
+            "rankme": [],
+            "feature_ambient_dim": [],
         }
     else:
-        results = {"train_loss": [], 
-                   "train_acc_1": [], "train_acc_5": [], 
-                   "test_acc_1": [], "test_acc_5": []}
-
+        results = {"train_loss": [],
+                   "test_loss":  [],
+                   "train_acc_1": [], "train_acc_5": [],
+                   "test_acc_1": [], "test_acc_5": [],
+                   "lr" : [],
+        }
+    if args.track_jacobian:
+        results["feature_input_jacobian"] = []
     if args.algorithm == "linear":
         if args.use_autocast:
             with autocast():
-                activations = powerlaw.generate_activations_prelayer(
+                activations = powerlaw.generate_activations_prelayer_torch(
                     net=model,
                     layer=model.fc,
-                    data_loader=loaders["test"],
+                    data_loader=loaders["train"],
                     use_cuda=True,
                 )
-                activations_eigen = powerlaw.get_eigenspectrum(activations)
+            activations_eigen = powerlaw.get_eigenspectrum_torch(activations)
+            with autocast():
                 try:
+                    tmin, tmax = 3, min(50, activations.shape[1])
                     alpha, ypred, R2, R2_100 = powerlaw.stringer_get_powerlaw(
-                        activations_eigen, trange=np.arange(3, 50)
+                        activations_eigen, trange=np.arange(tmin, tmax)
                     )
+                    rk = powerlaw.rankme(activations_eigen)
                 except:
-                    alpha, R2, R2_100 = np.nan, np.nan, np.nan
+                    alpha, R2, R2_100, rk = np.nan, np.nan, np.nan, np.nan
                 # debug_plot(activations_eigen,alpha,ypred,R2,R2_100,'test_full_early_{:.4f}.png'.format(args.lambd))
                 # save_path = gen_ckpt_path(args, args.algorithm, args.epochs, 'results_{}_full_early_alpha'.format(args.dataset), 'npy')
                 # np.save(save_path,dict(alpha=alpha,R2=R2,R2_100=R2_100))
@@ -609,13 +698,18 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False):
                 results["alpha"] = alpha
                 results["R2"] = R2
                 results["R2_100"] = R2_100
+                results["lr"] = [ optimizer.param_groups[0]['lr'] if scheduler is None else scheduler.get_last_lr()[0] ]
+                results["effective_rank"] = np.sum(activations_eigen) / np.max(np.abs(activations_eigen))
+                results["feature_ambient_dim"] = np.prod(activations.shape[1:])
+                results["rankme"] = rk
+                del activations
                 print("Initial alpha", results["alpha"])
         else:
             alpha_arr, R2_arr, R2_100_arr = powerlaw.stringer_get_powerlaw_batch(
                 net=model,
                 layer=model.fc,
                 # data_loader=loaders['test'],trange=np.arange(50,200),
-                data_loader=loaders["test"],
+                data_loader=loaders["train"],
                 trange=np.arange(5, 50),
                 use_cuda=True,
             )
@@ -623,6 +717,19 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False):
             results["alpha_arr"] = alpha_arr
             results["R2_arr"] = R2_arr
             results["R2_100_arr"] = R2_100_arr
+            results["lr"] = [ optimizer.param_groups[0]['lr'] if scheduler is None else scheduler.get_last_lr()[0] ]
+
+        if args.track_jacobian: # track input jacobian for linear regression on pretrained features
+            jacobian = input_jacobian(
+                net=model,
+                layer=None,
+                data_loader=loaders["train"], 
+                batch_size=args.jacobian_batch_size, 
+                use_cuda=True,
+                num_samples=args.jacobian_nsamples,
+                bigmem=args.jacobian_bigmem,
+            )
+            results["feature_input_jacobian"] = [jacobian]
         
         if use_wandb:
             log_wandb(results, step=0, skip_keys=['eigenspectrum'])
@@ -636,25 +743,60 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False):
         target_model = copy.deepcopy(model)
         for param in list(target_model.parameters()):
             param.requires_grad = False
+            
+    print("Saving model checkpoint at initialization")
+    ckpt_path = gen_ckpt_path(args, eval_args, epoch=0, suffix='pt')
+    state = dict(
+        epoch=0,
+        model=model.state_dict(),
+        optimizer=optimizer.state_dict(),
+    )
+    if scheduler is not None:
+        state["scheduler"] = scheduler.state_dict()
+    torch.save(state, ckpt_path)
 
     for epoch in range(1, args.epochs + 1):
-        if epoch == 1 and args.track_alpha:
-            # compute alpha before training starts!
-            activations = powerlaw.generate_activations_prelayer(
-                net=model,
-                layer=model.backbone.proj,
-                data_loader=loaders["test"],
-                use_cuda=True,
-            )
-            activations_eigen = powerlaw.get_eigenspectrum(activations)
-            alpha, ypred, R2, R2_100 = powerlaw.stringer_get_powerlaw(
-                activations_eigen, trange=np.arange(3, 100)
-            )
-            results["eigenspectrum"].append((epoch - 1, activations_eigen))
-            results["alpha"].append((epoch - 1, alpha))
-            results["R2"].append((epoch - 1, R2))
-            results["R2_100"].append((epoch - 1, R2_100))
-            print("Initial alpha", results["alpha"])
+        if epoch == 1:
+            if args.track_alpha:
+                # compute alpha before training starts!
+                activations = powerlaw.generate_activations_prelayer_torch(
+                    net=model,
+                    layer=model.backbone.proj,
+                    data_loader=loaders["train"],
+                    use_cuda=True,
+                )
+                activations_eigen = powerlaw.get_eigenspectrum_torch(activations)
+                tmin, tmax = 3, min(100, activations.shape[1])
+                alpha, ypred, R2, R2_100 = powerlaw.stringer_get_powerlaw(
+                    activations_eigen, trange=np.arange(tmin, tmax)
+                )
+                rk = powerlaw.rankme(activations_eigen)
+                results["eigenspectrum"].append((epoch - 1, activations_eigen))
+                results["alpha"].append((epoch - 1, alpha))
+                results["R2"].append((epoch - 1, R2))
+                results["R2_100"].append((epoch - 1, R2_100))
+                results["lr"].append(
+                    (epoch -1, optimizer.param_groups[0]['lr'] if scheduler is None else scheduler.get_last_lr()[0])
+                )
+                results["effective_rank"].append(
+                    (epoch -1, np.sum(activations_eigen) / np.max(np.abs(activations_eigen)))
+                )
+                results["rankme"].append((epoch -1, rk))
+                del activations
+                print("Initial alpha", results["alpha"])
+            
+            if args.track_jacobian and args.jacobian_bigmem:
+                # compute Jacobian before training starts!
+                jacobian = input_jacobian(
+                    net=model,
+                    layer=None if args.algorithm == "linear" else model.backbone.proj,
+                    data_loader=loaders["train"], 
+                    batch_size=args.jacobian_batch_size, 
+                    use_cuda=True,
+                    num_samples=args.jacobian_nsamples,
+                    bigmem=args.jacobian_bigmem,
+                )
+                results["feature_input_jacobian"].append((epoch -1, jacobian))
 
         train_loss = train_step(
             model=model,
@@ -665,6 +807,7 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False):
             loss_fn=loss_fn,
             epoch=epoch,
             args=args,
+            scheduler=scheduler,
         )
 
         results["train_loss"].append(train_loss)
@@ -680,26 +823,49 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False):
             )
             results["train_acc_1"].append(acc_1)
             results["train_acc_5"].append(acc_5)
+            results["lr"].append(
+                optimizer.param_groups[0]['lr'] if scheduler is None else scheduler.get_last_lr()[0]
+            )
+            if args.track_jacobian and args.jacobian_bigmem and epoch % args.log_interval == 0:
+                # compute Jacobian before training starts!
+                jacobian = input_jacobian(
+                    net=model,
+                    layer=None,
+                    data_loader=loaders["train"], 
+                    batch_size=args.jacobian_batch_size, 
+                    use_cuda=True,
+                    num_samples=args.jacobian_nsamples,
+                    bigmem=args.jacobian_bigmem,
+                )
+                results["feature_input_jacobian"].append((epoch, jacobian))
+            
         elif epoch % args.log_interval == 0:
-            ckpt_path = gen_ckpt_path(args, eval_args, epoch=epoch)
+            ckpt_path = gen_ckpt_path(args, eval_args, epoch=epoch, suffix='pt')
             state = dict(
                 epoch=epoch + 1,
                 model=model.state_dict(),
                 optimizer=optimizer.state_dict(),
             )
+            if scheduler is not None:
+                state["scheduler"] = scheduler.state_dict()
+            torch.save(state, ckpt_path)
+            ckpt_path = gen_ckpt_path(args, eval_args, epoch=epoch)
             torch.save(state, ckpt_path)
             if args.track_alpha:
                 # compute alpha at intermediate training steps
-                activations = powerlaw.generate_activations_prelayer(
+                activations = powerlaw.generate_activations_prelayer_torch(
                     net=model,
                     layer=model.backbone.proj,
-                    data_loader=loaders["test"],
+                    data_loader=loaders["train"],
                     use_cuda=True,
                 )
-                activations_eigen = powerlaw.get_eigenspectrum(activations)
+                activations_eigen = powerlaw.get_eigenspectrum_torch(activations)
+                tmin, tmax = 3, min(100, activations.shape[1])
                 alpha, ypred, R2, R2_100 = powerlaw.stringer_get_powerlaw(
-                    activations_eigen, trange=np.arange(3, 100)
+                    activations_eigen, trange=np.arange(tmin, tmax)
                 )
+                rk = powerlaw.rankme(activations_eigen)
+                del activations
                 if args.adaptive_ssl:
                     alpha_gt = max(0, alpha - 1.2)  # check if alpha > 1.2
                     alpha_lt = max(0, 0.8 - alpha)  # check if alpha < 0.8
@@ -722,10 +888,38 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False):
                 results["alpha"].append((epoch, alpha))
                 results["R2"].append((epoch, R2))
                 results["R2_100"].append((epoch, R2_100))
+                results["lr"].append(
+                    (epoch, optimizer.param_groups[0]['lr'] if scheduler is None else scheduler.get_last_lr()[0])
+                )
+                results["effective_rank"].append(
+                    (epoch, np.sum(activations_eigen) / np.max(np.abs(activations_eigen)))
+                )
+                results["rankme"].append((epoch, rk))
                 # print(results['alpha'])
-            
+
+        # logging base width as float to enable model-wise line plots in wandb
+        results['base_width'] = float(str(args.model).split("_")[1].replace("width", ""))
         if use_wandb:
-            log_wandb(results, step=epoch, skip_keys=['eigenspectrum'])
+            if epoch == 1:
+                log_wandb(results, step=epoch, skip_keys=['eigenspectrum'])
+            else:
+                log_wandb(results, step=epoch, skip_keys=['eigenspectrum', 'base_width'])
+                
+    if args.track_jacobian and args.algorithm != "linear":
+        # compute Jacobian at the end of pretraining!
+        jacobian = input_jacobian(
+            net=model,
+            layer=model.backbone.proj,
+            data_loader=loaders["train"], 
+            batch_size=args.jacobian_batch_size, 
+            use_cuda=True,
+            num_samples=args.jacobian_nsamples,
+            bigmem=args.jacobian_bigmem,
+        )
+        results["feature_input_jacobian"].append((args.epochs, jacobian))
+        
+        if use_wandb:
+            log_wandb(results, step=args.epochs, skip_keys=['eigenspectrum', 'base_width'])
 
     return results
 
@@ -796,9 +990,10 @@ def run_experiment(args):
     # build model from SSL library
     model = build_model(args)
     print("CONSTRUCTED MODEL")
+    print(model)
 
     # build optimizer
-    optimizer = build_optimizer(model, training)
+    optimizer, scheduler = build_optimizer(model, training)
     print("CONSTRUCTED OPTIMIZER")
 
     if training.precache:
@@ -815,7 +1010,31 @@ def run_experiment(args):
             "npy",
         )
         np.save(save_path, results)
-
+    elif training.jacobian_only:
+        print("Computing input Jacobian of SSL features, no training")
+        results = {}
+        jacobian = input_jacobian(
+            net=model,
+            layer=model.backbone.proj,
+            data_loader=loaders["train"], 
+            batch_size=args.jacobian_batch_size, 
+            use_cuda=True, 
+            num_samples=args.jacobian_nsamples,
+            bigmem=args.jacobian_bigmem,
+        )
+        results["feature_input_jacobian"] = [jacobian]
+        
+        if use_wandb:
+            log_wandb(results, step=training.epochs)
+            
+        save_path = gen_ckpt_path(
+            training,
+            eval,
+            training.epochs,
+            "results_{}_jacobian".format(training.dataset),
+            "npy",
+        )
+        np.save(save_path, results)
     else:
         # get loss function
         loss_fn = build_loss_fn(training)
@@ -823,7 +1042,7 @@ def run_experiment(args):
 
         # train the model with default=BT
         results = train(model, loaders, optimizer, loss_fn, training, eval,
-                        args.logging.use_wandb)
+                        args.logging.use_wandb, scheduler=scheduler)
 
         # save results
         save_path = gen_ckpt_path(
@@ -881,5 +1100,5 @@ if __name__ == "__main__":
     print(f"Total time: {time.time() - start_time}")
     print(f"Results saved to {save_fname}")
 
-    if args.logging.use_wandb: 
+    if args.logging.use_wandb:
         stop_wandb_server()
