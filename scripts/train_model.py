@@ -175,7 +175,7 @@ def build_dataloaders(
             )
         else:
             raise Exception("Algorithm not implemented")
-    elif dataset == "imagenet":
+    elif dataset == "imagenet" or dataset == 'imagenet100':
         if algorithm in ("BarlowTwins", "SimCLR", "ssl", "byol", "VICReg"):
             # return stl10_pt(
             #     datadir,
@@ -363,7 +363,7 @@ def build_model(args=None):
                 feat_dim = 2048
         if training.dataset in ["cifar10", "stl10"]:
             num_classes = 10
-        elif training.dataset in ["cifar100"]:
+        elif training.dataset in ["cifar100", "imagenet100"]:
             num_classes = 100
         elif training.dataset in ["imagenet"]:
             num_classes = 1000

@@ -30,8 +30,8 @@ from fastssl.data.cifar_transforms import (
 
 import numpy as np
 
-IMG_SIZE = 96 #224
-DEFAULT_CROP_RATIO = 96/256 #224/256
+IMG_SIZE = 128 #224
+DEFAULT_CROP_RATIO = 128/256 #224/256
 
 
 def to_device(device):
