@@ -35,6 +35,7 @@ import fastssl.models.barlow_twins as bt
 from fastssl.utils.base import set_seeds, get_args_from_config
 import fastssl.utils.powerlaw as powerlaw
 from fastssl.models.barlow_twins import off_diagonal
+from fastssl.utils.jacobian import input_jacobian
 
 Section('training', 'Fast distributed imagenet training').params(
     dataset=Param(
@@ -75,6 +76,10 @@ Section('training', 'Fast distributed imagenet training').params(
         str, 'ckpt-dir', default='/data/krishna/research/results/0319/001/checkpoints'),
     use_autocast=Param(
         bool, 'autocast fp16', default=True),
+    track_jacobian=Param(bool, "Track input Jacobian of the last feature layer", default=False),
+    jacobian_bigmem=Param(bool, "Use fast memory-expensive Jacobian computation algorithm, which explicitly instantiates the Jacobian tensor", default=False),
+    jacobian_batch_size=Param(int, "Batch size to use for Jacobian computation.", default=128),
+    jacobian_nsamples=Param(int, "Number of training samples to use for Jacobian computation. Set to 0 to use all samples (default = 0)", default=0),
 )
 
 Section('eval', 'Fast Imagenet evaluation').params(
@@ -133,7 +138,7 @@ def build_model(args=None):
             'bkey': training.model,  # supports : resnet50feat, resnet50proj
             'ckpt_path': args.ckpt_dir + f'/checkpoint_ssl.pth',
             'dataset': training.dataset,
-            'feat_dim': 2048,  # args.projector_dim
+            'feat_dim': args.projector_dim
             'num_classes': num_classes,
         }
         model_cls = bt.LinearClassifier
@@ -247,6 +252,18 @@ def train(model, loaders, optimizer, loss_fn, args, gpu, sampler, start_epoch):
             results['alpha_arr'] = alpha_arr
             results['R2_arr'] = R2_arr
             results['R2_100_arr'] = R2_100_arr
+            
+        if args.track_jacobian:
+            jacobian = input_jacobian(
+                net=model,
+                layer=model.fc,
+                data_loader=loaders["train"], 
+                batch_size=args.jacobian_batch_size, 
+                use_cuda=True,
+                num_samples=args.jacobian_nsamples,
+                bigmem=args.jacobian_bigmem,
+            )
+            results["feature_input_jacobian"] = jacobian
 
     if args.use_autocast:
         scaler = GradScaler()

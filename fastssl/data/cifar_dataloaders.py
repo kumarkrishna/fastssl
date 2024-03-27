@@ -35,6 +35,9 @@ from fastssl.data.cifar_transforms import (
     SSLPT_CIFAR,
     ReScale,
     CifarTransformFFCV,
+    CifarUpscaledTransform,
+    CifarClassifierUpscaledTransform,
+    CifarUpscaledTransformFFCV,
 )
 
 
@@ -62,6 +65,8 @@ def gen_image_pipeline(device="cuda:0", transform_cls=None, rescale=False):
     # no rescaling required anymore!
     # if rescale:
     #     image_pipeline.append(ReScale(1.0/255.0))
+    #if upscale:
+    #    image_pipeline.insert(1, RandomResizedCrop(output_size=(224, 224), ratio=(1.0, 1.0), scale=(1.0, 1.0)))
     if transform_cls:
         image_pipeline.append(transform_cls())
 
@@ -83,6 +88,14 @@ def gen_image_pipeline_ffcv_ssl(device="cuda:0", transform_cls=None, rescale=Fal
 
         image_pipeline.extend(transform_cls.transform_list)
 
+#    elif upscale:
+#        image_pipeline: List[Operation] = [
+#            RandomResizedCropRGBImageDecoder(
+#                output_size=(224, 224),
+#                scale=(1.0, 1.0),
+#                ratio=(1.0, 1.0),
+#            )
+#        ]
     else:
         image_pipeline: List[Operation] = [SimpleRGBImageDecoder()]
 
@@ -131,6 +144,7 @@ def gen_image_label_pipeline(
         device (str, optional): CPU/GPU. Defaults to 'cuda:0'.
         num_augmentations (int, optional): Number of total image augmentations. Defaults to 1.
         transform_cls_augs (CifarTransformFFCV, optional): Transforms to be applied to generate other augmentations. Defaults to None.
+        upscale (bool, optional): Upscale image data to 224x224 resolution. Defaults to False.
 
     Returns:
         loaders : dict('train': dataloader, 'test': dataloader)
@@ -199,6 +213,7 @@ def gen_image_label_pipeline_ffcv_ssl_test(
         rescale (bool, optional): Flag to rescale pixel vals to [0,1]. Defaults to False.
         device (str, optional): CPU/GPU. Defaults to 'cuda:0'.
         num_augmentations (int, optional): Number of patches. Defaults to 2.
+        upscale (bool, optional): Upscale image data to 224x224 resolution. Defaults to False.
 
     Returns:
         loaders: dict('train': dataloader, 'test': dataloader)
@@ -246,6 +261,7 @@ def gen_image_label_pipeline_ffcv_ssl(
     rescale: bool = False,
     device: str = "cuda:0",
     num_augmentations: int = 2,
+    upscale: bool = False,
 ):
     """Function for generating multiple augmentations from each image.
 
@@ -258,6 +274,7 @@ def gen_image_label_pipeline_ffcv_ssl(
         rescale (bool, optional): Flag to rescale pixel vals to [0,1]. Defaults to False.
         device (str, optional): CPU/GPU. Defaults to 'cuda:0'.
         num_augmentations (int, optional): Number of patches. Defaults to 2.
+        upscale (bool, optional): Upscale image data to 224x224 resolution. Defaults to False.
 
     Returns:
         loaders: dict('train': dataloader, 'test': dataloader)
@@ -306,7 +323,9 @@ def gen_image_label_pipeline_ffcv_ssl(
         if val_dataset is None: continue
         label_pipeline = gen_label_pipeline(device=device)
         image_pipeline = gen_image_pipeline(
-            device=device, transform_cls=CifarClassifierTransform, rescale=rescale
+            device=device, 
+            transform_cls=CifarClassifierUpscaledTransform if upscale else CifarClassifierTransform, 
+            rescale=rescale, 
         )
 
         ordering = (
@@ -334,6 +353,7 @@ def cifar_ffcv(
     device: str = "cuda:0",
     num_augmentations: int = 2,
     test_ffcv: bool = False,
+    upscale: bool = False,
 ):
     """Function to return dataloader for Cifar-10 SSL
 
@@ -345,13 +365,14 @@ def cifar_ffcv(
         device (str, optional): CPU/GPU. Defaults to 'cuda:0'.
         num_augmentations (int, optional): Number of patches. Defaults to 2.
         test_ffcv (bool, optional): Flag to use pipeline for testing FFCV multi-augmentations
+        upscale (bool, optional): Upscale image data to 224x224 resolution. Defaults to False
 
     Returns:
         loaders : dict('train': dataloader, 'test': dataloader)
     """
 
     # transform_cls = CifarTransform
-    transform_cls = CifarTransformFFCV()
+    transform_cls = CifarUpscaledTransformFFCV() if upscale else CifarTransformFFCV()
     if test_ffcv:
         gen_img_label_fn = gen_image_label_pipeline_ffcv_ssl_test
     else:
@@ -375,6 +396,7 @@ def cifar_classifier_ffcv(
     num_workers: int = None,
     device: str = "cuda:0",
     num_augmentations: int = 1,
+    upscale: bool = False,
 ):
     """Function to return dataloader for Cifar-10 classification
 
@@ -385,12 +407,13 @@ def cifar_classifier_ffcv(
         num_workers (int, optional): Number of CPU workers. Defaults to None.
         device (str, optional): CPU/GPU. Defaults to 'cuda:0'.
         num_augmentations (int, optional): Number of patches. Defaults to 1.
+        upscale (bool, optional): Upscale image data to 224x224 resolution. Defaults to False.
 
     Returns:
         loaders : dict('train': dataloader, 'test': dataloader)
     """
 
-    transform_cls = CifarClassifierTransform
+    transform_cls = CifarClassifierUpscaledTransform if upscale else CifarClassifierTransform
     transform_cls_extra_augs = CifarTransformFFCV()
     return gen_image_label_pipeline(
         train_dataset=train_dataset,
@@ -404,14 +427,14 @@ def cifar_classifier_ffcv(
     )
 
 
-def cifar_pt(datadir, batch_size=None, num_workers=None, device="cuda:0"):
+def cifar_pt(datadir, batch_size=None, num_workers=None, device="cuda:0", upscale=False):
     """
     Create pytorch compatible dataloaders for CIFAR-10.
     """
     loaders = {}
     for split in ["train", "test"]:
         dataset = torchvision.datasets.CIFAR10(
-            root=datadir, train=split == "train", download=True, transform=SSLPT_CIFAR()
+            root=datadir, train=split == "train", download=True, transform=SSLPT_CIFAR(upscale=upscale)
         )
         loaders[split] = DataLoader(
             # dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
