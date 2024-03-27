@@ -43,13 +43,16 @@ from fastssl.data import (
     stl10_pt,
     stl_classifier_ffcv,
     simple_dataloader,
+    imagenet_ffcv,
+    imagenet_classifier_ffcv,
 )
+#from fastssl.data.imagenet_dataloaders import get_ssltrain_imagenet_ffcv_dataloaders, get_sseval_imagenet_ffcv_dataloaders
 from fastssl.models import barlow_twins as bt
 from fastssl.models import linear, byol, simclr, vicreg
 
 from fastssl.utils.base import (
-    set_seeds, 
-    get_args_from_config, 
+    set_seeds,
+    get_args_from_config,
     merge_with_args,
     start_wandb_server,
     stop_wandb_server,
@@ -185,6 +188,24 @@ def build_dataloaders(
             # num_workers=num_workers)
         else:
             raise Exception("Algorithm not implemented")
+    elif dataset == "imagenet":
+        if algorithm in ("BarlowTwins", "SimCLR", "ssl", "byol", "VICReg"):
+            return imagenet_ffcv(
+                train_dataset,
+                val_dataset,
+                batch_size,
+                num_workers,
+                num_augmentations=num_augmentations,
+            )
+        elif algorithm == "linear":
+            default_linear_bsz = 512
+            return imagenet_classifier_ffcv(
+                train_dataset,
+                val_dataset,
+                default_linear_bsz,
+                num_workers,
+                num_augmentations=num_augmentations,
+            )
     else:
         raise Exception("Dataset {} not supported".format(dataset))
 
@@ -360,11 +381,28 @@ def build_model(args=None):
                 except:
                     base_width = 64
                 feat_dim = 32*base_width
+            if "vit" in training.model:
+                try:
+                    assert len(training.model.split('_width'))>1
+                    base_width = int(training.model.split('_width')[-1])
+                except:
+                    base_width = 64
+                if "vitt" in training.model:
+                    num_heads = 3
+                elif "vits" in training.model:
+                    num_heads = 4
+                elif "vit" in training.model:
+                    num_heads = 6
+                else:
+                    num_heads = 8
+                feat_dim = num_heads*base_width
             else:
                 feat_dim = 2048
         
         if training.dataset in ["cifar10", "stl10"]:
             num_classes = 10
+        elif "imagenet" in training.dataset:
+            num_classes = 1000
         else:
             num_classes = 100
         
@@ -726,10 +764,10 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
             jacobian = input_jacobian(
                 net=model,
                 layer=None,
-                data_loader=loaders["train"], 
-                batch_size=args.jacobian_batch_size, 
+                data_loader=loaders["train"],
+                batch_size=args.jacobian_batch_size,
                 use_cuda=True,
-                num_samples=args.jacobian_nsamples,
+                max_samples=args.jacobian_nsamples,
                 bigmem=args.jacobian_bigmem,
             )
             results["feature_input_jacobian"] = [jacobian]
@@ -793,10 +831,10 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
                 jacobian = input_jacobian(
                     net=model,
                     layer=None if args.algorithm == "linear" else model.backbone.proj,
-                    data_loader=loaders["train"], 
-                    batch_size=args.jacobian_batch_size, 
+                    data_loader=loaders["train"],
+                    batch_size=args.jacobian_batch_size,
                     use_cuda=True,
-                    num_samples=args.jacobian_nsamples,
+                    max_samples=args.jacobian_nsamples,
                     bigmem=args.jacobian_bigmem,
                 )
                 results["feature_input_jacobian"].append((epoch -1, jacobian))
@@ -834,14 +872,14 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
                 jacobian = input_jacobian(
                     net=model,
                     layer=None,
-                    data_loader=loaders["train"], 
-                    batch_size=args.jacobian_batch_size, 
+                    data_loader=loaders["train"],
+                    batch_size=args.jacobian_batch_size,
                     use_cuda=True,
-                    num_samples=args.jacobian_nsamples,
+                    max_samples=args.jacobian_nsamples,
                     bigmem=args.jacobian_bigmem,
                 )
                 results["feature_input_jacobian"].append((epoch, jacobian))
-            
+
         elif epoch % args.log_interval == 0:
             ckpt_path = gen_ckpt_path(args, eval_args, epoch=epoch, suffix='pt')
             state = dict(
@@ -907,22 +945,22 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False, 
                 log_wandb(results, step=epoch, skip_keys=['eigenspectrum'])
             else:
                 log_wandb(results, step=epoch, skip_keys=['eigenspectrum', 'base_width'])
-                
+
     if args.track_jacobian and args.algorithm != "linear":
         # compute Jacobian at the end of pretraining!
         jacobian = input_jacobian(
             net=model,
             layer=model.backbone.proj,
-            data_loader=loaders["train"], 
-            batch_size=args.jacobian_batch_size, 
+            data_loader=loaders["train"],
+            batch_size=args.jacobian_batch_size,
             use_cuda=True,
-            num_samples=args.jacobian_nsamples,
+            max_samples=args.jacobian_nsamples,
             bigmem=args.jacobian_bigmem,
         )
         results["feature_input_jacobian"].append((args.epochs, jacobian))
         
         if use_wandb:
-            log_wandb(results, step=args.epochs, skip_keys=['eigenspectrum', 'base_width'])
+            log_wandb(results, step=args.epochs +1, skip_keys=['eigenspectrum', 'base_width'])
 
     return results
 
@@ -1015,7 +1053,7 @@ def run_experiment(args):
             "npy",
         )
         np.save(save_path, results)
-    elif training.jacobian_only:
+    elif eval.jacobian_only:
         print("Computing input Jacobian of SSL features, no training")
         results = {}
         jacobian = input_jacobian(
@@ -1024,7 +1062,7 @@ def run_experiment(args):
             data_loader=loaders["train"], 
             batch_size=args.jacobian_batch_size, 
             use_cuda=True, 
-            num_samples=args.jacobian_nsamples,
+            max_samples=args.jacobian_nsamples,
             bigmem=args.jacobian_bigmem,
         )
         results["feature_input_jacobian"] = [jacobian]

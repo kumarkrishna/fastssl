@@ -98,6 +98,8 @@ def generate_activations_prelayer_torch(net,layer,data_loader,use_cuda=False,dim
     net.eval()
     for i, inp in enumerate(tqdm(data_loader)):
         (images, labels) = (inp[0], inp[1]) # discarding any extra item from the batch
+        if isinstance(images, (list, tuple)):
+            images = images[0]
         if use_cuda:
             images = images.cuda()
         with torch.no_grad():

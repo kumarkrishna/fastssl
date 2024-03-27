@@ -66,6 +66,11 @@ class BackBone(nn.Module):
         if 'pred' in self.name:
             self.build_predictor(projector_dim=projector_dim)
 
+    def _disable_fused_attn(self):
+        for _, m in self.feats.named_modules():
+            if hasattr(m, 'fused_attn'):
+                m.fused_attn = False
+
     def _resnet50mod(self, base_width, dataset):
         backbone = []
         # for name, module in resnet50().named_children():
@@ -93,18 +98,21 @@ class BackBone(nn.Module):
             if self.is_valid_layer(module, dataset):
                 backbone.append(module)
         self.feats = nn.Sequential(*backbone)
-        
+
     def _vittmod(self, base_width, dataset):
         # num_classes=0 disables classifier head
         self.feats = ViTTiny(width=base_width, num_classes=0)
-        
+        self._disable_fused_attn()
+
     def _vitsmod(self, base_width, dataset):
         # num_classes=0 disables classifier head
         self.feats = ViTSmall(width=base_width, num_classes=0)
-        
+        self._disable_fused_attn()
+
     def _vitmod(self, base_width, dataset):
         # num_classes=0 disables classifier head
         self.feats = ViT(width=base_width, num_classes=0)
+        self._disable_fused_attn()
 
     def _shallowConvmod(self,dataset,layers=2):
         assert layers%2==0, "Set number of layers for shallow Conv to be even, currently {}".format(layers)

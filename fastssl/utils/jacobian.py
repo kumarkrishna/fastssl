@@ -27,7 +27,7 @@ def split_batch_gen(data_loader, batch_size, max_samples=0):
             torch.split(targets, batch_size)):
             
             yield img, target
-            num_samples += 1
+            num_samples += img.shape[0]
             if num_samples >= max_samples:
                 return
 
@@ -236,12 +236,11 @@ def get_implicit_jacobian_fn(
         params = dict(model_wrapped.named_parameters())
     
     model_fn = lambda x: torch.func.functional_call(model_wrapped, params, (x,))
-    if vmap:
-        model_fn = torch.vmap(model_fn, in_dims=(0,), out_dims=(0,))
+#    if vmap:
+#        model_fn = torch.vmap(model_fn, in_dims=(0,), out_dims=(0,))
     
     def jacobian_fn(x):
         jvp_fn = lambda u: torch.func.jvp(model_fn, (x,), (u,))[1]
-            
         (out, vjp_fn_) = torch.func.vjp(model_fn, x)
         vjp_fn = lambda v: vjp_fn_(v)[0]
         
@@ -249,7 +248,7 @@ def get_implicit_jacobian_fn(
         
         if vmap:
             jvp_fn = torch.vmap(jvp_fn, in_dims=(0,), out_dims=(0,))
-            vjp_fn = torch.vmap(vjp_fn_, in_dims=(0,), out_dims=(0,))
+            vjp_fn = torch.vmap(vjp_fn, in_dims=(0,), out_dims=(0,))
         
         return jvp_fn, vjp_fn, noutdims
         
@@ -259,7 +258,7 @@ def get_implicit_jacobian_fn(
 #@partial(torch.vmap, in_dims=(0, None, None))
 def spectral_norm_power_iteration_implicit(
     v: torch.Tensor,
-    jvp_fn: Callable, 
+    jvp_fn: Callable,
     vjp_fn: Callable
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """ Compute one iteration of the power method to estimate
@@ -267,7 +266,7 @@ def spectral_norm_power_iteration_implicit(
         
         Args:
             v: torch.Tensor co-domain defined vector used to start the power iteration
-            vjp_fn: Callable with signature vjp_fn(s) -> J.T @ s 
+            vjp_fn: Callable with signature vjp_fn(s) -> J.T @ s
             jvp_fn: Callable with signature jvp_fn(s) -> J @ s
             
             where J is the Jacobian matrix implicitly computed by jvp_fn and vjp_fn
@@ -278,10 +277,10 @@ def spectral_norm_power_iteration_implicit(
             
             Equivalently, u = J.T @ v and t = J u = J @ (J.T @ v)
     """
-    u = vjp_fn(v.unsqueeze(0))[0]
-    u /= torch.norm(u, p=2, dim=-1).unsqueeze(-1)
+    u = vjp_fn(v.unsqueeze(0))
+    u /= torch.linalg.vector_norm(u, ord=2, dim=(1,2,3), keepdim=True)
     v = jvp_fn(u)
-    v /= torch.norm(v, p=2, dim=-1).unsqueeze(-1)
+    v /= torch.linalg.vector_norm(v, ord=2, dim=-1, keepdim=True)
     return (u, v)
 
 
@@ -316,7 +315,7 @@ def spectral_norm_implicit(
     jvp_fn, vjp_fn, noutdims = jacobian_fn(x)
     
     v = torch.randn(nbatches, noutdims, device=device, dtype=dtype)
-    v /= torch.norm(v, p=2, dim=1).unsqueeze(-1)
+    v /= torch.linalg.vector_norm(v, ord=2, dim=1, keepdim=True)
     
     sigma_prev = torch.zeros(nbatches, dtype=dtype, device=device)
     u_prev = torch.zeros((nbatches, nindims), dtype=dtype, device=device)
@@ -324,9 +323,13 @@ def spectral_norm_implicit(
     
     for i in range(num_steps):
         u, v = spectral_norm_power_iteration_implicit(v, jvp_fn, vjp_fn)
+        #print(f"u: {u.shape}")
+        u = u.reshape(nbatches, -1)
+        #print(f"u: {u.shape}")
+        #print(f"v: {v.shape}")
         sigma = torch.vmap(torch.dot)(
-            vjp_fn(v)[0].squeeze(0),
-            u.squeeze(0)
+            vjp_fn(v).reshape(nbatches, -1),
+            u
         )
         
         diff_indices = torch.ge(
@@ -337,13 +340,13 @@ def spectral_norm_implicit(
             break
         
         sigma_prev[batch_indices[diff_indices]] = sigma[diff_indices]
-        u_prev[batch_indices[diff_indices]] = u[diff_indices[None, :]]
+        u_prev[batch_indices[diff_indices]] = u[diff_indices]
         v_prev[batch_indices[diff_indices]] = v[diff_indices[None, :]]
-        u = u[diff_indices[None, :]]
+        u = u[diff_indices]
         v = v[diff_indices[None, :]]
         x = x[diff_indices]
         batch_indices = batch_indices[diff_indices]
-        
+        nbatches = len(batch_indices)
         jvp_fn, vjp_fn, _ = jacobian_fn(x)
         
     return u_prev.squeeze(), sigma_prev, v_prev.squeeze()
@@ -352,7 +355,7 @@ def spectral_norm_implicit(
 """ Main entry-point
 """
 
-def input_jacobian(net, layer, data_loader, batch_size=128, num_samples=0, use_cuda=False, bigmem=True):
+def input_jacobian(net, layer, data_loader, batch_size=128, max_samples=0, use_cuda=False, bigmem=True):
     """ Compute average input Jacobian norm of features of @layer of @net using @data_loader.
     
         If bigmem = True, a fast method that explicity instantiates the Jacobian tensor
@@ -366,17 +369,18 @@ def input_jacobian(net, layer, data_loader, batch_size=128, num_samples=0, use_c
         Note: to control memory usage a @batch_size can be provided, in order for (potentially) 
               large batches of @dataloder to be broken down into smaller chunks.
               
-        If num_samples > 0, the input Jacobian is estimated using num_samples training samples
+        If max_samples > 0, the input Jacobian is estimated using num_samples training samples
     """  
     jacobian_norm = 0.
     num_samples = 0
     device = torch.device("cuda") if use_cuda else torch.device("cpu")
+    net.eval()
     
     dset_size = len(data_loader) * data_loader.batch_size
     num_batches = dset_size // batch_size + dset_size % batch_size
     progress_bar = tqdm(
         split_batch_gen(
-            data_loader, batch_size, num_samples
+            data_loader, batch_size, max_samples
         ),
         desc="Feature Input Jacobian",
         total = num_batches,
@@ -385,8 +389,8 @@ def input_jacobian(net, layer, data_loader, batch_size=128, num_samples=0, use_c
     if bigmem:
         jacobian_fn, handle = get_explicit_jacobian_fn(net, layer, data_loader)
         def compute_operator_norm(x):
-         jacobian = jacobian_fn(x)
-         return spectral_norm(jacobian, num_steps=20)[1]
+            jacobian = jacobian_fn(x)
+            return spectral_norm(jacobian, num_steps=20)[1]
     else:
         jacobian_fn, handle = get_implicit_jacobian_fn(net, layer)
         compute_operator_norm = lambda x: spectral_norm_implicit(x, jacobian_fn=jacobian_fn, num_steps=10)[1]
