@@ -16,12 +16,8 @@ from ffcv.transforms import (
     Convert,
     ToDevice,
     ToTensor,
-<<<<<<< HEAD
     ToTorchImage,
     RandomResizedCrop,
-=======
-    ToTorchImage
->>>>>>> 940e81e6f095dc6a352a1644016d8c9ee975dab5
 )
 from ffcv.transforms.common import Squeeze
 
