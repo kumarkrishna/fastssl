@@ -51,11 +51,12 @@ from fastssl.models import linear, byol, simclr, vicreg
 
 from fastssl.utils.base import (
     set_seeds, 
-    get_args_from_config, 
+    get_args_from_config_distributed,
+    print_distributed,
     merge_with_args,
     start_wandb_server,
     stop_wandb_server,
-    log_wandb
+    log_wandb_distributed
 )
 import fastssl.utils.powerlaw as powerlaw
 
@@ -459,6 +460,7 @@ def train_step(
     loss_fn=None,
     scaler=None,
     epoch=None,
+    dist_args: dict=None
 ):
     """
     Generic trainer.
@@ -474,7 +476,11 @@ def train_step(
     total_loss, total_num, num_batches = 0.0, 0, 0
 
     ## setup dataloader + tqdm
-    train_bar = tqdm(dataloader, desc="Train")
+    if dist_args is None or dist_args.local_rank is None:
+        disable_tqdm = False
+    else:
+        disable_tqdm = dist_args.local_rank not in [-1,0]
+    train_bar = tqdm(dataloader, desc="Train", disable=disable_tqdm)
 
     ## set model in train mode
     model.train()
@@ -632,7 +638,8 @@ def precache_outputs(model, loaders, args, eval_args):
     return output_dict
 
 
-def train(model, loaders, optimizer, loss_fn, args, eval_args, start_epoch=1, use_wandb=False):
+def train(model, loaders, optimizer, loss_fn, args, eval_args, start_epoch=1, 
+          use_wandb=False, dist_args: dict =None):
     if args.track_alpha:
         results = {
             "train_loss": [],
@@ -683,7 +690,8 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, start_epoch=1, us
             results["R2_100_arr"] = R2_100_arr
 
         if use_wandb:
-            log_wandb(results, step=0, skip_keys=['eigenspectrum'])
+            log_wandb_distributed(results, step=0, skip_keys=['eigenspectrum'], 
+                      dist_args=dist_args)
 
     if args.use_autocast:
         scaler = GradScaler()
@@ -723,6 +731,7 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, start_epoch=1, us
             loss_fn=loss_fn,
             epoch=epoch,
             args=args,
+            dist_args=dist_args
         )
 
         results["train_loss"].append(train_loss)
@@ -778,7 +787,8 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, start_epoch=1, us
                 # print(results['alpha'])
 
         if use_wandb:
-            log_wandb(results, step=epoch, skip_keys=['eigenspectrum'])
+            log_wandb_distributed(results, step=epoch, skip_keys=['eigenspectrum'],
+                                  dist_args=dist_args)
 
     return results
 
@@ -820,7 +830,7 @@ def search_precache_file(training, eval):
         setattr(training, "val_dataset", os.path.join(folder, fname))
 
 
-def load_model_opt(training, eval, model, optimizer):
+def load_model_opt(training, eval, model, optimizer, dist_args: dict = None):
     saved_path = gen_ckpt_path(
         training,
         eval,
@@ -834,7 +844,8 @@ def load_model_opt(training, eval, model, optimizer):
     candidate_files = [f for f in candidate_files if training.algorithm==f.split('_')[1]]
     candidate_files = [f for f in candidate_files if training.seed==int(f.split('_')[-1])]
     if len(candidate_files) == 0:
-        print("No existing checkpoint file found! Running training from scratch!")
+        print_distributed("No existing checkpoint file found! Running training from scratch!", 
+                          dist_args)
         return 1
     
     else:
@@ -845,50 +856,14 @@ def load_model_opt(training, eval, model, optimizer):
         model.load_state_dict(last_epoch_ckpt_state_dict['model'])
         optimizer.load_state_dict(last_epoch_ckpt_state_dict['optimizer'])
         epoch = last_epoch_ckpt_state_dict['epoch']
-        print(f"Resuming training from {epoch} epochs") 
-        print(f"Loaded {last_epoch_ckpt.split(training.ckpt_dir)[-1][1:]}!")
+        print_distributed(f"Resuming training from {epoch} epochs", dist_args) 
+        print_distributed(f"Loaded {last_epoch_ckpt.split(training.ckpt_dir)[-1][1:]}!", 
+                          dist_args)
 
         return epoch
-    
-
-def init_distributed_mode(args: dict):
-    if "RANK" in os.environ and "WORLD_SIZE" in os.environ:
-        args.global_rank = int(os.environ["RANK"])
-        args.world_size = int(os.environ["WORLD_SIZE"])
-        args.gpu = int(os.environ["LOCAL_RANK"])
-        args.local_rank = args.gpu
-    elif "SLURM_PROCID" in os.environ:
-        args.global_rank = int(os.environ["SLURM_PROCID"])
-        args.gpu = args.global_rank % torch.cuda.device_count()
-    else:
-        print("Not using distributed mode")
-        args.distributed = False
-        args.global_rank = -1
-        args.local_rank = -1
-        return
-    args.distributed = True
-
-    torch.cuda.set_device(args.gpu)
-    args.dist_backend = "nccl"
-    args.dist_url = "env://"
-    print(
-        "| distributed init (rank {}): {}, gpu {} / {}".format(
-            args.global_rank, args.dist_url, args.gpu, args.world_size
-        ),
-        flush=True,
-    )
-    dist.init_process_group(
-        backend=args.dist_backend,
-        init_method=args.dist_url,
-        world_size=args.world_size,
-        rank=args.local_rank,
-    )
-    dist.barrier()
-
-    return args
 
 
-def run_experiment(args):
+def run_experiment(args, dist_args):
     # import ray
     # num_cpus = int(os.environ.get('SLURM_CPUS_PER_TASK'))
     # ray.init(num_cpus=2)
@@ -896,10 +871,10 @@ def run_experiment(args):
     eval = args.eval
 
     set_seeds(training.seed)
-    if training.distributed:
-        dist_args = init_distributed_mode(SimpleNamespace())
-    else:
-        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    # if training.distributed:
+    #     dist_args = init_distributed_mode(SimpleNamespace())
+    # else:
+    #     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     if eval.use_precache:
         search_precache_file(training, eval)
@@ -914,7 +889,7 @@ def run_experiment(args):
         training.num_workers,
         training.num_augmentations,
     )
-    print("CONSTRUCTED DATA LOADERS")
+    print_distributed("CONSTRUCTED DATA LOADERS", dist_args)
     # breakpoint()
     # if training.distributed:
     #     loaders['train'].distributed = True
@@ -926,7 +901,7 @@ def run_experiment(args):
 
     # build model from SSL library
     model = build_model(args)
-    print("CONSTRUCTED MODEL")
+    print_distributed("CONSTRUCTED MODEL", dist_args)
     if training.distributed:
         model = torch.nn.parallel.DistributedDataParallel(
             model, 
@@ -935,9 +910,9 @@ def run_experiment(args):
 
     # build optimizer
     optimizer = build_optimizer(model, training)
-    print("CONSTRUCTED OPTIMIZER")
+    print_distributed("CONSTRUCTED OPTIMIZER", dist_args)
 
-    start_epoch = load_model_opt(training, eval, model, optimizer)
+    start_epoch = load_model_opt(training, eval, model, optimizer, dist_args)
 
     if training.precache:
         print("Precaching model outputs, no training")
@@ -957,11 +932,11 @@ def run_experiment(args):
     else:
         # get loss function
         loss_fn = build_loss_fn(training)
-        print("CONSTRUCTED LOSS FUNCTION")
+        print_distributed("CONSTRUCTED LOSS FUNCTION", dist_args)
 
         # train the model with default=BT
         results = train(model, loaders, optimizer, loss_fn, training, eval,
-                        start_epoch, args.logging.use_wandb)
+                        start_epoch, args.logging.use_wandb, dist_args)
 
         # save results
         save_path = gen_ckpt_path(
@@ -985,7 +960,8 @@ def bt_trainer(config):
 
 if __name__ == "__main__":
     # gather arguments
-    args = get_args_from_config()
+    # args = get_args_from_config()
+    args, dist_args = get_args_from_config_distributed()
     args.training.datadir = args.training.datadir.format(dataset=args.training.dataset)
     args.training.train_dataset = args.training.train_dataset.format(
         dataset=args.training.dataset
@@ -1000,24 +976,25 @@ if __name__ == "__main__":
     if logging_jobtype == 'linear':
         logging_jobtype = f'{args.eval.train_algorithm}_{logging_jobtype}'
     if args.logging.use_wandb:
-        start_wandb_server(train_config_dict=args.training.__dict__,
-                           eval_config_dict=args.eval.__dict__,
-                           wandb_group=args.logging.wandb_group,
-                           wandb_project=args.logging.wandb_project,
-                           exp_name=f'{logging_modelname}_' +\
-                                    f'{args.training.algorithm}_' +\
-                                    f'{args.training.seed}',
-                           exp_group=f'{logging_modelname}',
-                           exp_job_type=f'{logging_jobtype}'
-                           )
+        if dist_args.local_rank in [-1,0]:
+            start_wandb_server(train_config_dict=args.training.__dict__,
+                            eval_config_dict=args.eval.__dict__,
+                            wandb_group=args.logging.wandb_group,
+                            wandb_project=args.logging.wandb_project,
+                            exp_name=f'{logging_modelname}_' +\
+                                        f'{args.training.algorithm}_' +\
+                                        f'{args.training.seed}',
+                            exp_group=f'{logging_modelname}',
+                            exp_job_type=f'{logging_jobtype}'
+                            )
 
     # train model
     start_time = time.time()
-    save_fname = run_experiment(args)
+    save_fname = run_experiment(args, dist_args)
 
     # wrapup experiments with logging key variables
-    print(f"Total time: {time.time() - start_time}")
-    print(f"Results saved to {save_fname}")
+    print_distributed(f"Total time: {time.time() - start_time}", dist_args)
+    print_distributed(f"Results saved to {save_fname}", dist_args)
 
     if args.logging.use_wandb: 
         stop_wandb_server()
