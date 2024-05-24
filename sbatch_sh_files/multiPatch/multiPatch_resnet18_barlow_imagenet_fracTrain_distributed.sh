@@ -16,7 +16,7 @@ conda activate ffcv_new
 WANDB__SERVICE_WAIT=300
 which python
 
-export MASTER_PORT=export MASTER_PORT=$(expr 10000 + $(echo -n $SLURM_JOBID | tail -c 4))
+export MASTER_PORT=$(expr 10000 + $(echo -n $SLURM_JOBID | tail -c 4))
 export MASTER_ADDR="127.0.0.1"
 echo $SLURM_JOBID, $SLURM_ARRAY_TASK_ID, $MASTER_PORT, $MASTER_ADDR
 
