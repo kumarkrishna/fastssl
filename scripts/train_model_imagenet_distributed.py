@@ -29,7 +29,7 @@ import time, copy
 import torch
 from torch.cuda.amp import GradScaler, autocast
 from torch.nn import CrossEntropyLoss
-from torch.optim import Adam, SGD, lr_scheduler
+from torch.optim import Adam, AdamW, SGD, lr_scheduler
 import torch.distributed as dist
 
 import torchvision
@@ -431,7 +431,8 @@ def build_optimizer(model, args=None):
         optimizer : optimizer for training model
     """
     if args.algorithm in ("BarlowTwins", "SimCLR", "ssl", "byol", "VICReg"):
-        return Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+        # return Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+        return AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     elif args.algorithm == "linear":
         default_lr = 1e-3
         default_weight_decay = 1e-6
@@ -638,6 +639,16 @@ def precache_outputs(model, loaders, args, eval_args):
     return output_dict
 
 
+# Define the learning rate lambda function for linear warmup + cosine annealing
+def lr_lambda(epoch: int, warmup_epochs: int=10, total_epochs: int=100):
+    if epoch < warmup_epochs:
+        # Linear warmup
+        return epoch / warmup_epochs
+    else:
+        # Cosine annealing after warmup
+        return 0.5 * (1 + torch.cos(torch.pi * (epoch - warmup_epochs) / (total_epochs - warmup_epochs)))
+
+
 def train(model, loaders, optimizer, loss_fn, args, eval_args, start_epoch=1, 
           use_wandb=False, dist_args: dict =None):
     if args.track_alpha:
@@ -698,6 +709,12 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, start_epoch=1,
     else:
         scaler = None
 
+    if args.algorithm == "linear":
+        scheduler = None
+    else:
+        lr_lambda_partial = partial(lr_lambda, warmup_epochs=10, total_epochs=args.epochs)
+        scheduler = lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda_partial, last_epoch=start_epoch-1)
+
     if args.algorithm == "byol":
         target_model = copy.deepcopy(model)
         for param in list(target_model.parameters()):
@@ -722,6 +739,9 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, start_epoch=1,
             results["R2_100"].append((epoch - 1, R2_100))
             print("Initial alpha", results["alpha"])
 
+        if scheduler:
+            scheduler.step()
+            
         train_loss = train_step(
             model=model,
             dataloader=loaders["train"],
