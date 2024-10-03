@@ -712,8 +712,13 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, start_epoch=1,
     if args.algorithm == "linear":
         scheduler = None
     else:
+        for param_group in optimizer.param_groups:
+            param_group['initial_lr'] = param_group['lr']
         lr_lambda_partial = partial(lr_lambda, warmup_epochs=10, total_epochs=args.epochs)
-        scheduler = lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda_partial, last_epoch=start_epoch-1)
+        scheduler = lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda_partial, 
+                                          last_epoch=start_epoch-1) 
+        # sets scheduler.last_epoch to 1 if start_epoch is 1 
+        #   |--> scheduler.step() will set lr for epoch=1
 
     if args.algorithm == "byol":
         target_model = copy.deepcopy(model)
@@ -738,9 +743,6 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, start_epoch=1,
             results["R2"].append((epoch - 1, R2))
             results["R2_100"].append((epoch - 1, R2_100))
             print("Initial alpha", results["alpha"])
-
-        if scheduler:
-            scheduler.step()
             
         train_loss = train_step(
             model=model,
@@ -753,6 +755,8 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, start_epoch=1,
             args=args,
             dist_args=dist_args
         )
+        if scheduler:
+            scheduler.step()
 
         results["train_loss"].append(train_loss)
 
