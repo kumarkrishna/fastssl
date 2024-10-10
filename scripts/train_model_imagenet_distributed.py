@@ -25,7 +25,7 @@ import pickle
 
 # from ray import tune
 
-import time, copy
+import time, copy, math
 import torch
 from torch.cuda.amp import GradScaler, autocast
 from torch.nn import CrossEntropyLoss
@@ -646,7 +646,7 @@ def lr_lambda(epoch: int, warmup_epochs: int=10, total_epochs: int=100):
         return epoch / warmup_epochs
     else:
         # Cosine annealing after warmup
-        return 0.5 * (1 + torch.cos(torch.pi * (epoch - warmup_epochs) / (total_epochs - warmup_epochs)))
+        return 0.5 * (1 + math.cos(math.pi * (epoch - warmup_epochs) / (total_epochs - warmup_epochs)))
 
 
 def train(model, loaders, optimizer, loss_fn, args, eval_args, start_epoch=1, 
