@@ -54,9 +54,18 @@ class LinearClassifier(nn.Module):
         # import pdb; pdb.set_trace()
         if ckpt_path is not None:
             ## map location cpu
-            self.load_state_dict(
-                torch.load(ckpt_path, map_location="cpu")["model"], strict=False
-            )
+            saved_state_dict = torch.load(ckpt_path, map_location="cpu")["model"]
+            saved_state_dict_keys = list(saved_state_dict.keys())
+            if 'module' == saved_state_dict_keys[0].split('.')[0]:
+                # model was saved as DDP
+                from collections import OrderedDict
+                non_ddp_state_dict = OrderedDict()
+                for k, v in saved_state_dict.items(): 
+                    non_ddp_state_dict[k.split('module.')[-1]] = v
+                self.load_state_dict(non_ddp_state_dict, strict=False)
+            else:
+                # model was saved normally, no DDP
+                self.load_state_dict(saved_state_dict, strict=False)
             print("Loaded pretrained weights from {}".format(ckpt_path))
 
         for param in self.backbone.parameters():

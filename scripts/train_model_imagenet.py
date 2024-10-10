@@ -629,7 +629,7 @@ def precache_outputs(model, loaders, args, eval_args):
     return output_dict
 
 
-def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False):
+def train(model, loaders, optimizer, loss_fn, args, eval_args, start_epoch=1, use_wandb=False):
     if args.track_alpha:
         results = {
             "train_loss": [],
@@ -692,7 +692,7 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False):
         for param in list(target_model.parameters()):
             param.requires_grad = False
 
-    for epoch in range(1, args.epochs + 1):
+    for epoch in range(start_epoch, args.epochs + 1):
         if epoch == 1 and args.track_alpha:
             # compute alpha before training starts!
             activations = powerlaw.generate_activations_prelayer(
@@ -817,6 +817,37 @@ def search_precache_file(training, eval):
         setattr(training, "val_dataset", os.path.join(folder, fname))
 
 
+def load_model_opt(training, eval, model, optimizer):
+    saved_path = gen_ckpt_path(
+        training,
+        eval,
+        eval.epoch,  # currently not used in the name
+        f"exp_{training.algorithm}_{eval.epoch}_seed_{training.seed}",
+        "pth",
+    )
+    folder = os.path.dirname(saved_path)
+    candidate_files = glob.glob(os.path.join(folder, "*.pth"))
+    candidate_files = [os.path.splitext(os.path.basename(f))[0] for f in candidate_files]
+    candidate_files = [f for f in candidate_files if training.algorithm==f.split('_')[1]]
+    candidate_files = [f for f in candidate_files if training.seed==int(f.split('_')[-1])]
+    if len(candidate_files) == 0:
+        print("No existing checkpoint file found! Running training from scratch!")
+        return 1
+    
+    else:
+        candidate_files.sort(key=lambda x: int(x.split('_')[2]))
+        last_epoch_ckpt = os.path.join(folder, f"{candidate_files[-1]}.pth")
+        
+        last_epoch_ckpt_state_dict = torch.load(last_epoch_ckpt)
+        model.load_state_dict(last_epoch_ckpt_state_dict['model'])
+        optimizer.load_state_dict(last_epoch_ckpt_state_dict['optimizer'])
+        epoch = last_epoch_ckpt_state_dict['epoch']
+        print(f"Resuming training from {epoch} epochs") 
+        print(f"Loaded {last_epoch_ckpt.split(training.ckpt_dir)[-1][1:]}!")
+
+        return epoch
+    
+
 def run_experiment(args):
     # import ray
     # num_cpus = int(os.environ.get('SLURM_CPUS_PER_TASK'))
@@ -851,6 +882,8 @@ def run_experiment(args):
     optimizer = build_optimizer(model, training)
     print("CONSTRUCTED OPTIMIZER")
 
+    start_epoch = load_model_opt(training, eval, model, optimizer)
+
     if training.precache:
         print("Precaching model outputs, no training")
         # removing the final linear readout layer
@@ -873,7 +906,7 @@ def run_experiment(args):
 
         # train the model with default=BT
         results = train(model, loaders, optimizer, loss_fn, training, eval,
-                        args.logging.use_wandb)
+                        start_epoch, args.logging.use_wandb)
 
         # save results
         save_path = gen_ckpt_path(

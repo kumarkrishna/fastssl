@@ -43,6 +43,8 @@ from fastssl.data import (
     stl10_pt,
     stl_classifier_ffcv,
     simple_dataloader,
+    imagenet_ffcv,
+    imagenet_classifier_ffcv,
 )
 from fastssl.models import barlow_twins as bt
 from fastssl.models import linear, byol, simclr
@@ -165,12 +167,39 @@ def build_dataloaders(
             # num_workers=num_workers)
         else:
             raise Exception("Algorithm not implemented")
+    elif dataset == "imagenet" or dataset == 'imagenet100':
+        if algorithm in ("BarlowTwins", "SimCLR", "ssl", "byol", "VICReg"):
+            # return stl10_pt(
+            #     datadir,
+            #     splits=["unlabeled"],
+            #     batch_size=batch_size,
+            #     num_workers=num_workers)
+            # return stl_ffcv(train_dataset, val_dataset, batch_size, num_workers)
+            return imagenet_ffcv(
+                train_dataset,
+                val_dataset,
+                batch_size,
+                num_workers,
+                num_augmentations=num_augmentations,
+            )
+        elif algorithm == "linear":
+            default_linear_bsz = 512
+            # return stl_classifier_ffcv(
+            #     train_dataset, val_dataset, default_linear_bsz, num_workers
+            # )
+            return imagenet_classifier_ffcv(
+                train_dataset,
+                val_dataset,
+                default_linear_bsz,
+                num_workers,
+                num_augmentations=num_augmentations,
+            )
     else:
         raise Exception("Dataset {} not supported".format(dataset))
 
 
 def gen_ckpt_path(args, eval_args, epoch=100, prefix="exp", suffix="pth"):
-    if suffix == "pth":
+    if suffix == "pth" and 'imagenet' not in args.dataset:
         main_dir = os.environ["SLURM_TMPDIR"]
         ckpt_dir = main_dir
         ckpt_path = os.path.join(
@@ -238,21 +267,35 @@ def gen_ckpt_path(args, eval_args, epoch=100, prefix="exp", suffix="pth"):
                 ),
             )
 
-        # dir for augs during linear eval
-        if args.algorithm == "linear":
-            ckpt_dir = os.path.join(
-                ckpt_dir, "{}_augs_eval".format(args.num_augmentations)
+        if suffix == "pth":
+            ckpt_path = os.path.join(
+                ckpt_dir,
+                "{}_{}_{}{}.{}".format(
+                    prefix,
+                    eval_args.train_algorithm
+                    if "linear" in args.algorithm
+                    else args.algorithm,
+                    epoch,
+                    "_seed_{}".format(args.seed),
+                    suffix,
+                ),
             )
-        # create ckpt file name
-        ckpt_path = os.path.join(
-            ckpt_dir,
-            "{}{}{}.{}".format(
-                prefix,
-                "" if "precache" in prefix else "_{}_{}".format(args.algorithm, epoch),
-                "_seed_{}".format(args.seed),
-                suffix,
-            ),
-        )
+        else:
+            # dir for augs during linear eval
+            if args.algorithm == "linear":
+                ckpt_dir = os.path.join(
+                    ckpt_dir, "{}_augs_eval".format(args.num_augmentations)
+                )
+            # create ckpt file name
+            ckpt_path = os.path.join(
+                ckpt_dir,
+                "{}{}{}.{}".format(
+                    prefix,
+                    "" if "precache" in prefix else "_{}_{}".format(args.algorithm, epoch),
+                    "_seed_{}".format(args.seed),
+                    suffix,
+                ),
+            )
     # create directory if it doesn't exist
     Path(ckpt_dir).mkdir(parents=True, exist_ok=True)
     return ckpt_path
@@ -309,6 +352,14 @@ def build_model(args=None):
                 feat_dim = 32*base_width
             else:
                 feat_dim = 2048
+        if training.dataset in ["cifar10", "stl10"]:
+            num_classes = 10
+        elif training.dataset in ["cifar100", "imagenet100"]:
+            num_classes = 100
+        elif training.dataset in ["imagenet"]:
+            num_classes = 1000
+        else:
+            raise NotImplementedError
         model_args = {
             "bkey": model_type,
             "ckpt_path": ckpt_path,
@@ -318,7 +369,7 @@ def build_model(args=None):
             "proj_hidden_dim": training.hidden_dim
             if eval.train_algorithm in ("byol")
             else training.projector_dim,
-            "num_classes": 10 if training.dataset in ["cifar10", "stl10"] else 100,
+            "num_classes": num_classes,
         }
         model_cls = linear.LinearClassifier
 
