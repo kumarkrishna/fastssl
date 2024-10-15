@@ -29,7 +29,7 @@ from ffcv.transforms import (
 )
 from ffcv.transforms.common import Squeeze
 
-from fastssl.data.cifar_transforms import (
+from fastssl.fastssl.data.misc_transforms import (
     CifarTransform,
     CifarClassifierTransform,
     SSLPT_CIFAR,

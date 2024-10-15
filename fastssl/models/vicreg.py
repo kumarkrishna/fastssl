@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 from fastssl.models.ssl import SSL
 from fastssl.models.backbone import BackBone
-from fastssl.data.cifar_transforms import CifarTransform
+from fastssl.fastssl.data.misc_transforms import CifarTransform
 from fastssl.data.imagenet_dataloaders import TransformGPU
 from tqdm import tqdm
 

@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 #SBATCH --array=0-14%10
 #SBATCH --partition=long
-#SBATCH --gres=gpu:a100:2
+#SBATCH --gres=gpu:a100l:2
 #SBATCH --mem=32GB
 #SBATCH --time=8:00:00
+####SBATCH --time=16:00:00
+####SBATCH --time=24:00:00
 #SBATCH --cpus-per-gpu=4
 #SBATCH --output=sbatch_out/rn18_barlow_imagenet_widthVary.%A.%a.out
 #SBATCH --error=sbatch_err/rn18_barlow_imagenet_widthVary.%A.%a.err
@@ -42,6 +44,8 @@ num_workers=4
 
 model=resnet18proj_width${width}
 num_augs=2
+###num_augs=4
+###num_augs=8
 # epochs=30
 epochs=100
 log_epochs=10
