@@ -51,8 +51,7 @@ from fastssl.models import linear, byol, simclr, vicreg
 
 from fastssl.utils.base import (
     set_seeds, 
-    get_args_from_config_distributed,
-    print_distributed,
+    get_args_from_config_distributed, print_distributed,
     merge_with_args,
     start_wandb_server,
     stop_wandb_server,
@@ -431,8 +430,7 @@ def build_optimizer(model, args=None):
         optimizer : optimizer for training model
     """
     if args.algorithm in ("BarlowTwins", "SimCLR", "ssl", "byol", "VICReg"):
-        # return Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
-        return AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+        return Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     elif args.algorithm == "linear":
         default_lr = 1e-3
         default_weight_decay = 1e-6
@@ -639,16 +637,6 @@ def precache_outputs(model, loaders, args, eval_args):
     return output_dict
 
 
-# Define the learning rate lambda function for linear warmup + cosine annealing
-def lr_lambda(epoch: int, warmup_epochs: int=10, total_epochs: int=100):
-    if epoch < warmup_epochs:
-        # Linear warmup
-        return epoch / warmup_epochs
-    else:
-        # Cosine annealing after warmup
-        return 0.5 * (1 + math.cos(math.pi * (epoch - warmup_epochs) / (total_epochs - warmup_epochs)))
-
-
 def train(model, loaders, optimizer, loss_fn, args, eval_args, start_epoch=1, 
           use_wandb=False, dist_args: dict =None):
     if args.track_alpha:
@@ -674,9 +662,12 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, start_epoch=1,
                     use_cuda=True,
                 )
                 activations_eigen = powerlaw.get_eigenspectrum(activations)
-                alpha, ypred, R2, R2_100 = powerlaw.stringer_get_powerlaw(
-                    activations_eigen, trange=np.arange(3, 100)
-                )
+                try:
+                    alpha, ypred, R2, R2_100 = powerlaw.stringer_get_powerlaw(
+                        activations_eigen, trange=np.arange(3, 100)
+                    )
+                except:
+                    alpha, R2, R2_100 = np.nan, np.nan, np.nan
                 # debug_plot(activations_eigen,alpha,ypred,R2,R2_100,'test_full_early_{:.4f}.png'.format(args.lambd))
                 # save_path = gen_ckpt_path(args, args.algorithm, args.epochs, 'results_{}_full_early_alpha'.format(args.dataset), 'npy')
                 # np.save(save_path,dict(alpha=alpha,R2=R2,R2_100=R2_100))
@@ -708,17 +699,6 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, start_epoch=1,
         scaler = GradScaler()
     else:
         scaler = None
-
-    if args.algorithm == "linear":
-        scheduler = None
-    else:
-        for param_group in optimizer.param_groups:
-            param_group['initial_lr'] = param_group['lr']
-        lr_lambda_partial = partial(lr_lambda, warmup_epochs=10, total_epochs=args.epochs)
-        scheduler = lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda_partial, 
-                                          last_epoch=start_epoch-1) 
-        # sets scheduler.last_epoch to 1 if start_epoch is 1 
-        #   |--> scheduler.step() will set lr for epoch=1
 
     if args.algorithm == "byol":
         target_model = copy.deepcopy(model)
@@ -752,11 +732,8 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, start_epoch=1,
             scaler=scaler,
             loss_fn=loss_fn,
             epoch=epoch,
-            args=args,
-            dist_args=dist_args
+            args=args, dist_args=dist_args
         )
-        if scheduler:
-            scheduler.step()
 
         results["train_loss"].append(train_loss)
 
@@ -895,10 +872,7 @@ def run_experiment(args, dist_args):
     eval = args.eval
 
     set_seeds(training.seed)
-    # if training.distributed:
-    #     dist_args = init_distributed_mode(SimpleNamespace())
-    # else:
-    #     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
 
     if eval.use_precache:
         search_precache_file(training, eval)
@@ -915,13 +889,6 @@ def run_experiment(args, dist_args):
     )
     print_distributed("CONSTRUCTED DATA LOADERS", dist_args)
     # breakpoint()
-    # if training.distributed:
-    #     loaders['train'].distributed = True
-    #     loaders['test'].distributed = True
-
-    # X = next(iter(loaders['train']))
-    # for x in X:
-    #     print(dist_args.gpu, x.shape, x.device)
 
     # build model from SSL library
     model = build_model(args)
