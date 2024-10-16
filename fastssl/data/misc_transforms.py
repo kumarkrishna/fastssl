@@ -184,12 +184,13 @@ class Imagenet1kTransformFFCV():
                                 NormalizeImage(mean=np.array(IMAGENET_FFCV_MEAN),
                                         std=np.array(IMAGENET_FFCV_MEAN),
                                         type=np.float16),
-                                transforms.GaussianBlur(kernel_size=(5, 9), 
-                                                        sigma=(0.1, 2))
+                                # transforms.GaussianBlur(kernel_size=(5, 9), 
+                                #                         sigma=(0.1, 2))
                                 ]
         self.dataset_side_length = 128 #224
         self.dataset_resize_scale = (0.08, 1.0) #(0.2,1.0)
         self.dataset_resize_ratio = (0.75,4/3)
+        self.gaussian_blur_tfo = transforms.GaussianBlur(kernel_size=(5, 9), sigma=(0.1, 2))
 
 class Imagenet1kTransformFFCV_v2():
     """
