@@ -23,7 +23,7 @@ from fastssl.data.custom_transforms import TransformImagenet, GaussianBlur, Sola
 import torchvision.transforms as transforms
 from PIL import Image
 
-from fastssl.fastssl.data.misc_transforms import (
+from fastssl.data.misc_transforms import (
     ImagenetClassifierTransform,
     ImagenetTransformFFCV
 )
