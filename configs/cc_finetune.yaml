@@ -1,0 +1,21 @@
+training:
+  dataset: 'cifar10'
+  datadir: '/network/datasets/{dataset}.var/{dataset}_torchvision/'
+  train_dataset: '/network/projects/_groups/linclab_users/ffcv/ffcv_datasets/{dataset}/train.beton'
+  val_dataset: '/network/projects/_groups/linclab_users/ffcv/ffcv_datasets/{dataset}/test.beton'
+  batch_size: 512
+  epochs: 100
+  lambd: 0.0078125
+  temperature: 0.1
+  projector_dim: 128
+  seed: 42
+  algorithm: 'finetune'
+  model: 'resnet50feat'
+  num_workers: 4
+  ckpt_dir: 'checkpoints'
+  use_autocast: True
+  num_augmentations: 1
+eval:
+  train_algorithm: 'ssl'
+  epoch: 100
+  num_augmentations_pretrain: 2

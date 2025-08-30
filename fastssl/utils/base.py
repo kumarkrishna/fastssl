@@ -133,6 +133,7 @@ def start_wandb_server(train_config_dict: dict,
                        eval_config_dict: dict,
                        wandb_group: str,
                        wandb_project: str,
+                       finetune_config_dict: dict=None,
                        exp_name: str = None,
                        exp_group: str = None, 
                        exp_job_type: str = None,
@@ -142,6 +143,9 @@ def start_wandb_server(train_config_dict: dict,
         log_config[f"train__{k}"] = v
     for k,v in eval_config_dict.items():
         log_config[f"eval__{k}"] = v
+    if finetune_config_dict:
+        for k,v in finetune_config_dict.items():
+            log_config[f"finetune__{k}"] = v
 
     wandb_dir = os.path.join(log_config['train__ckpt_dir'])
 
