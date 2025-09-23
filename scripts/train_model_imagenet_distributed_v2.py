@@ -15,6 +15,7 @@ python train_model.py --config-file configs/cc_barlow_twins.yaml
 from argparse import ArgumentParser
 from functools import partial
 from typing import List
+from types import SimpleNamespace
 
 import numpy as np
 import os, glob
@@ -24,11 +25,12 @@ import pickle
 
 # from ray import tune
 
-import time, copy
+import time, copy, math
 import torch
 from torch.cuda.amp import GradScaler, autocast
 from torch.nn import CrossEntropyLoss
-from torch.optim import Adam, SGD, lr_scheduler
+from torch.optim import Adam, AdamW, SGD, lr_scheduler
+import torch.distributed as dist
 
 import torchvision
 from tqdm import tqdm
@@ -38,28 +40,26 @@ from fastargs import Section, Param
 from fastssl.data import (
     cifar_ffcv,
     cifar_classifier_ffcv,
-    cifar_pt,
     stl_ffcv,
-    stl10_pt,
     stl_classifier_ffcv,
     simple_dataloader,
-    imagenet_ffcv,
-    imagenet_classifier_ffcv,
+    imagenet_ffcv_dist as imagenet_ffcv,
+    imagenet_classifier_ffcv_dist as imagenet_classifier_ffcv,
 )
 from fastssl.models import barlow_twins as bt
-from fastssl.models import linear, byol, simclr
+from fastssl.models import linear, byol, simclr, vicreg
 
 from fastssl.utils.base import (
     set_seeds, 
-    get_args_from_config, 
+    get_args_from_config_distributed, print_distributed,
     merge_with_args,
     start_wandb_server,
     stop_wandb_server,
-    log_wandb
+    log_wandb_distributed
 )
 import fastssl.utils.powerlaw as powerlaw
 
-Section("training", "Fast CIFAR-10 training").params(
+Section("training", "Fast SSL training").params(
     dataset=Param(str, "dataset", default="cifar10"),
     datadir=Param(str, "train data dir", default="/data/krishna/data/cifar"),
     train_dataset=Param(
@@ -72,7 +72,8 @@ Section("training", "Fast CIFAR-10 training").params(
     epochs=Param(int, "epochs", default=100),
     lr=Param(float, "learning-rate", default=1e-3),
     weight_decay=Param(float, "weight_decay", default=1e-6),
-    lambd=Param(float, "lambd for BarlowTwins", default=1 / 128),
+    lambd=Param(float, "lambd for BarlowTwins/VICReg", default=1 / 128),
+    mu=Param(float, "mu for VICReg", default=25.0),
     momentum_tau=Param(float, "momentum_tau for BYOL", default=0.01),
     temperature=Param(float, "temperature for SimCLR", default=0.01),
     seed=Param(int, "seed", default=1),
@@ -90,9 +91,18 @@ Section("training", "Fast CIFAR-10 training").params(
     precache=Param(bool, "Precache outputs of network", default=False),
     adaptive_ssl=Param(bool, "Use alpha to regularize SSL loss", default=False),
     num_augmentations=Param(int, "Number of augmentations to use per image", default=2),
+    distributed=Param(bool, "Run distributed training", default=False),
 )
 
-Section("eval", "Fast CIFAR-10 evaluation").params(
+Section("finetune", "Fast SSL finetuning").params(
+    algorithm=Param(str, "learning algorithm", default="finetune"),
+    lr_head=Param(float, "learning-rate", default=1e-4),
+    lr_backbone=Param(float, "learning-rate", default=1e-4),
+    weight_decay=Param(float, "weight_decay", default=1e-6),
+    distributed=Param(bool, "Run distributed finetuning", default=False),
+)
+
+Section("eval", "Fast SSL evaluation").params(
     train_algorithm=Param(str, "pretrain algo", default="ssl"),
     epoch=Param(int, "epoch", default=24),
     use_precache=Param(bool, "Use Precached outputs of network", default=False),
@@ -101,12 +111,11 @@ Section("eval", "Fast CIFAR-10 evaluation").params(
     ),
 )
 
-Section("logging", "Fast CIFAR-10 logging options").params(
+Section("logging", "Logging options").params(
     use_wandb=Param(bool, "Use wandb to log results", default=False),
     wandb_group=Param(str, "Wandb team to log run", default="eigengroup"),
     wandb_project=Param(str, "Wandb project to log run", default="temp-proj"),
 )
-
 
 def build_dataloaders(
     dataset="cifar10",
@@ -125,7 +134,7 @@ def build_dataloaders(
             train_dataset, val_dataset, batch_size=batch_size, num_workers=num_workers
         )
     if "cifar" in dataset:
-        if algorithm in ("BarlowTwins", "SimCLR", "ssl", "byol"):
+        if algorithm in ("BarlowTwins", "SimCLR", "ssl", "byol", "VICReg"):
             # return cifar_pt(
             #     datadir, batch_size=batch_size, num_workers=num_workers)
             # for ffcv cifar10 dataloader
@@ -146,25 +155,44 @@ def build_dataloaders(
                 num_workers,
                 num_augmentations=num_augmentations,
             )
+        elif algorithm == "finetune":
+            default_ft_bsz = 512
+            return cifar_classifier_ffcv(
+                train_dataset,
+                val_dataset,
+                default_ft_bsz,
+                num_workers,
+                num_augmentations=1+num_augmentations, # first aug is base image -- use for eval
+            )
         else:
             raise Exception("Algorithm not implemented")
     elif dataset == "stl10":
-        if algorithm in ("BarlowTwins", "SimCLR", "ssl", "byol"):
+        if algorithm in ("BarlowTwins", "SimCLR", "ssl", "byol", "VICReg"):
             # return stl10_pt(
             #     datadir,
             #     splits=["unlabeled"],
             #     batch_size=batch_size,
             #     num_workers=num_workers)
-            return stl_ffcv(train_dataset, val_dataset, batch_size, num_workers)
+            # return stl_ffcv(train_dataset, val_dataset, batch_size, num_workers)
+            return stl_ffcv(
+                train_dataset,
+                val_dataset,
+                batch_size,
+                num_workers,
+                num_augmentations=num_augmentations,
+            )
         elif algorithm == "linear":
             default_linear_bsz = 256
+            # return stl_classifier_ffcv(
+            #     train_dataset, val_dataset, default_linear_bsz, num_workers
+            # )
             return stl_classifier_ffcv(
-                train_dataset, val_dataset, default_linear_bsz, num_workers
+                train_dataset,
+                val_dataset,
+                default_linear_bsz,
+                num_workers,
+                num_augmentations=num_augmentations,
             )
-            # datadir,
-            # splits=["train", "test"],
-            # batch_size=batch_size,
-            # num_workers=num_workers)
         else:
             raise Exception("Algorithm not implemented")
     elif dataset == "imagenet" or dataset == 'imagenet100':
@@ -184,9 +212,6 @@ def build_dataloaders(
             )
         elif algorithm == "linear":
             default_linear_bsz = 512
-            # return stl_classifier_ffcv(
-            #     train_dataset, val_dataset, default_linear_bsz, num_workers
-            # )
             return imagenet_classifier_ffcv(
                 train_dataset,
                 val_dataset,
@@ -194,6 +219,18 @@ def build_dataloaders(
                 num_workers,
                 num_augmentations=num_augmentations,
             )
+        
+        elif algorithm == "finetune":
+            default_ft_bsz = 512
+            return imagenet_classifier_ffcv(
+                train_dataset,
+                val_dataset,
+                default_ft_bsz,
+                num_workers,
+                num_augmentations=1+num_augmentations, # first aug is base image -- use for eval
+            )
+        else:
+            raise Exception("Algorithm not implemented")
     else:
         raise Exception("Dataset {} not supported".format(dataset))
 
@@ -207,33 +244,27 @@ def gen_ckpt_path(args, eval_args, epoch=100, prefix="exp", suffix="pth"):
             "{}_{}_{}{}.{}".format(
                 prefix,
                 eval_args.train_algorithm
-                if "linear" in args.algorithm
+                if args.algorithm in ["linear", "finetune"]
                 else args.algorithm,
                 epoch,
-                "_seed_{}".format(args.seed)
-                if "linear" in eval_args.train_algorithm
-                else "",
+                "_seed_{}".format(args.seed),
+                # if "linear" in eval_args.train_algorithm
+                # else "",
                 suffix,
             ),
         )
     else:
         if "precache" in prefix:
             # save precache features/embeddings in $SLURM_TMPDIR
-            main_dir = os.path.join(os.environ["SLURM_TMPDIR"],'feats')
+            main_dir = os.environ["SLURM_TMPDIR"]
         else:
             main_dir = args.ckpt_dir
         model_name = args.model
         model_name = model_name.replace("proj", "")
         model_name = model_name.replace("feat", "")
         main_dir = os.path.join(main_dir, model_name)
-        if 'resnet18' in model_name:
-            base_width = int(model_name.split('_width')[-1])
-            # replace the _width{base_width} part in model name part of main_dir
-            main_dir = main_dir.replace(f"_width{base_width}","")
-            # create a subdir with the width info
-            main_dir = os.path.join(main_dir, f'width{base_width}')
         # dir for augs during SSL pretraining
-        if args.algorithm == "linear":
+        if args.algorithm in ["linear", "finetune"]:
             dir_algorithm = eval_args.train_algorithm
             main_dir = os.path.join(
                 main_dir, "{}_augs".format(eval_args.num_augmentations_pretrain)
@@ -266,26 +297,60 @@ def gen_ckpt_path(args, eval_args, epoch=100, prefix="exp", suffix="pth"):
                     args.weight_decay,
                 ),
             )
-
-        if suffix == "pth":
-            ckpt_path = os.path.join(
-                ckpt_dir,
-                "{}_{}_{}{}.{}".format(
-                    prefix,
-                    eval_args.train_algorithm
-                    if "linear" in args.algorithm
-                    else args.algorithm,
-                    epoch,
-                    "_seed_{}".format(args.seed),
-                    suffix,
+        elif dir_algorithm in ["VICReg"]:
+            ckpt_dir = os.path.join(
+                main_dir,
+                "lambd_{:.3f}_mu_{:.3f}_pdim_{}{}_bsz_{}_lr_{}_wd_{}".format(
+                    args.lambd,
+                    args.mu,
+                    args.projector_dim,
+                    "_no_autocast" if not args.use_autocast else "",
+                    args.batch_size,
+                    args.lr,
+                    args.weight_decay,
                 ),
             )
+
+        if suffix == "pth":
+            if "finetune" in prefix:
+                # checkpoint name for finetuned model
+                ckpt_dir = os.path.join(
+                    ckpt_dir, "{}_augs_finetune".format(args.num_augmentations))
+                ckpt_path = os.path.join(
+                    ckpt_dir,
+                    "{}{}_{}{}.{}".format(
+                        prefix,
+                        f"_{eval_args.train_algorithm}_{eval_args.epoch}",
+                        epoch,
+                        f"_seed_{args.seed}",
+                        suffix,
+                        ),
+                    )
+            else:
+                ckpt_path = os.path.join(
+                    ckpt_dir,
+                    "{}_{}_{}{}.{}".format(
+                        prefix,
+                        eval_args.train_algorithm
+                        if args.algorithm in ["linear","finetune"]
+                        else args.algorithm,
+                        epoch,
+                        f"_seed_{args.seed}",
+                        suffix,
+                    ),
+                )
         else:
-            # dir for augs during linear eval
+            # dir for augs during linear/finetune eval
             if args.algorithm == "linear":
                 ckpt_dir = os.path.join(
                     ckpt_dir, "{}_augs_eval".format(args.num_augmentations)
                 )
+            elif args.algorithm == "finetune":
+                ckpt_dir = os.path.join(
+                        ckpt_dir, "{}_augs_finetune".format(args.num_augmentations)
+                    )
+            else:
+                pass
             # create ckpt file name
             ckpt_path = os.path.join(
                 ckpt_dir,
@@ -309,7 +374,7 @@ def build_model(args=None):
     training = args.training
     eval = args.eval
 
-    if training.algorithm in ("BarlowTwins", "SimCLR", "ssl", "byol"):
+    if training.algorithm in ("BarlowTwins", "SimCLR", "ssl", "byol", "VICReg"):
         model_args = {
             "bkey": training.model,
             "dataset": training.dataset,
@@ -323,33 +388,27 @@ def build_model(args=None):
             # setting projector dim and hidden dim the same for SimCLR projector
             model_args["hidden_dim"] = training.projector_dim
             model_cls = simclr.SimCLR
+        elif training.algorithm in ("VICReg"):
+            # setting projector dim and hidden dim the same for VICReg projector
+            model_args["hidden_dim"] = training.projector_dim
+            model_cls = vicreg.VICReg
         else:
             model_args["hidden_dim"] = training.projector_dim
             model_cls = bt.BarlowTwins
 
-    elif training.algorithm == "linear":
+    elif training.algorithm in ["linear", "finetune"]:
         ckpt_path = gen_ckpt_path(training, eval, epoch=args.eval.epoch)
-        if eval.use_precache:
+        if eval.use_precache and training.algorithm == "linear":
             model_type = ""
         else:
-            model_type = training.model  # supports : resnet50feat, resnet50proj
+            model_type = training.model  # supports : resnet<18/50><feat/proj>
         if "proj" in training.model:
             feat_dim = training.projector_dim
         else:
             if "resnet18" in training.model:
-                try:
-                    assert len(training.model.split('_width'))>1
-                    base_width = int(training.model.split('_width')[-1])
-                except:
-                    base_width = 64
-                feat_dim = 8*base_width
+                feat_dim = 512
             elif "resnet50" in training.model:
-                try:
-                    assert len(training.model.split('_width'))>1
-                    base_width = int(training.model.split('_width')[-1])
-                except:
-                    base_width = 64
-                feat_dim = 32*base_width
+                feat_dim = 2048
             else:
                 feat_dim = 2048
         if training.dataset in ["cifar10", "stl10"]:
@@ -370,6 +429,7 @@ def build_model(args=None):
             if eval.train_algorithm in ("byol")
             else training.projector_dim,
             "num_classes": num_classes,
+            "finetune_backbone": training.algorithm == "finetune",
         }
         model_cls = linear.LinearClassifier
 
@@ -385,6 +445,8 @@ def build_loss_fn(args=None):
         return byol.BYOLLoss
     elif args.algorithm == "SimCLR":
         return partial(simclr.SimCLRLoss, _temperature=args.temperature)
+    elif args.algorithm == "VICReg":
+        return partial(vicreg.VICRegLoss, _lambda=args.lambd, _mu=args.mu)
     elif args.algorithm == "linear":
 
         def classifier_xent(model, inp):
@@ -401,11 +463,29 @@ def build_loss_fn(args=None):
             return CrossEntropyLoss(label_smoothing=0.1)(logits, y)
 
         return classifier_xent
+
+    elif args.algorithm == "finetune":
+
+        def classifier_xent_ft(model, inp):
+            inp = list(inp)
+            # WARNING: every epoch could have different augmentations of images
+            y = inp.pop(1)
+            x_base = inp.pop(0) # ignoring base image for training/loss 
+            num_augs = len(inp)
+            # x, y = inp
+            for x in inp:
+                x = x.cuda(non_blocking=True)
+            y = y.cuda(non_blocking=True)
+            # x, y = x.cuda(non_blocking=True), y.cuda(non_blocking=True)
+            logits = model(x)
+            return CrossEntropyLoss(label_smoothing=0.1)(logits, y)
+
+        return classifier_xent_ft
     else:
         raise Exception("Algorithm {} not implemented".format(args.algorithm))
 
 
-def build_optimizer(model, args=None):
+def build_optimizer(model, args=None, dist_args:dict=None):
     """
     Build optimizer for training model.
 
@@ -415,7 +495,7 @@ def build_optimizer(model, args=None):
     Returns:
         optimizer : optimizer for training model
     """
-    if args.algorithm in ("BarlowTwins", "SimCLR", "ssl", "byol"):
+    if args.algorithm in ("BarlowTwins", "SimCLR", "ssl", "byol", "VICReg"):
         return Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     elif args.algorithm == "linear":
         default_lr = 1e-3
@@ -423,17 +503,27 @@ def build_optimizer(model, args=None):
         return Adam(
             model.parameters(), lr=default_lr, weight_decay=default_weight_decay
         )
+    elif args.algorithm == "finetune":
+        # default_lr_head = 1e-3
+        # default_lr_backbone = 5e-4
+        # default_weight_decay = 1e-6
+        print_distributed(f"Finetuning with lr_head={args.lr_head}, lr_head=" \
+            f"{args.lr_backbone}, weight_decay={args.weight_decay}.", dist_args)
+        if args.distributed == True:
+            param_groups = [
+            dict(params=model.module.fc.parameters(), lr=args.lr_head),
+            dict(params=model.module.backbone.parameters(), lr=args.lr_backbone),
+        ]
+        else:
+            param_groups = [
+                dict(params=model.fc.parameters(), lr=args.lr_head),
+                dict(params=model.backbone.parameters(), lr=args.lr_backbone),
+            ]
+        return Adam(
+            param_groups, 0, weight_decay=args.weight_decay
+        )
     else:
         raise Exception("Algorithm not implemented")
-
-
-# def save_images(img1,img2,name):
-#     import matplotlib.pyplot as plt
-#     plt.close('all')
-#     plt.imsave('test_imgs/{}1.png'.format(name),img1/255.)
-#     plt.close('all')
-#     plt.imsave('test_imgs/{}2.png'.format(name),img2/255.)
-#     plt.close('all')
 
 
 def train_step(
@@ -445,6 +535,7 @@ def train_step(
     loss_fn=None,
     scaler=None,
     epoch=None,
+    dist_args: dict=None
 ):
     """
     Generic trainer.
@@ -460,7 +551,11 @@ def train_step(
     total_loss, total_num, num_batches = 0.0, 0, 0
 
     ## setup dataloader + tqdm
-    train_bar = tqdm(dataloader, desc="Train")
+    if dist_args is None or dist_args.local_rank is None:
+        disable_tqdm = False
+    else:
+        disable_tqdm = dist_args.local_rank not in [-1,0]
+    train_bar = tqdm(dataloader, desc="Train", disable=disable_tqdm)
 
     ## set model in train mode
     model.train()
@@ -485,7 +580,7 @@ def train_step(
             with autocast():
                 if args.algorithm == "byol":
                     loss = loss_fn(model, target_model, inp)
-                elif args.algorithm in ("BarlowTwins", "SimCLR", "ssl", "linear"):
+                elif args.algorithm in ("BarlowTwins", "SimCLR", "ssl", "linear", "VICReg", "finetune"):
                     loss = loss_fn(model, inp)
                 else:
                     raise Exception("Algorithm not implemented")
@@ -515,15 +610,24 @@ def train_step(
     return total_loss / num_batches
 
 
-def eval_step(model, dataloader, epoch=None, epochs=None):
+def eval_step(model, dataloader, args, epoch=None, epochs=None):
     model.eval()
     total_correct_1, total_correct_5, total_samples = 0.0, 0.0, 0
-    test_bar = tqdm(dataloader, desc="Test")
+
+    ## setup dataloader + tqdm
+    if dist_args is None or dist_args.local_rank is None:
+        disable_tqdm = False
+    else:
+        disable_tqdm = dist_args.local_rank not in [-1,0]
+    test_bar = tqdm(dataloader, desc="Test", disable=disable_tqdm)
+
     for inp in test_bar:
         # for data, target in test_bar:
         inp = list(inp)
         # WARNING: every epoch could have different augmentations of images
         target = inp.pop(1)
+        if args.algorithm == "finetune":
+            x_extra_aug = inp.pop(-1)   # ignoring last augmentation for eval
         for x in inp:
             x = x.cuda(non_blocking=True)
         target = target.cuda(non_blocking=True)
@@ -618,23 +722,23 @@ def precache_outputs(model, loaders, args, eval_args):
     return output_dict
 
 
-def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False):
-    if args.track_alpha:
-        results = {
-            "train_loss": [],
-            "train_acc_1": [],
-            "train_acc_5": [],
-            "test_acc_1": [],
-            "test_acc_5": [],
-            "eigenspectrum": [],
-            "alpha": [],
-            "R2": [],
-            "R2_100": [],
-        }
+def train(model, loaders, optimizer, loss_fn, args, eval_args, start_epoch=1,   
+          use_wandb=False, dist_args: dict=None, loaded_results_dict: dict=None):
+    if loaded_results_dict is not None:
+        results = loaded_results_dict
     else:
-        results = {"train_loss": [], 
-                   "train_acc_1": [], "train_acc_5": [], 
-                   "test_acc_1": [], "test_acc_5": []}
+        if args.track_alpha:
+            results = {
+                "train_loss": [],
+                "test_acc_1": [],
+                "test_acc_5": [],
+                "eigenspectrum": [],
+                "alpha": [],
+                "R2": [],
+                "R2_100": [],
+            }
+        else:
+            results = {"train_loss": [], "test_acc_1": [], "test_acc_5": []}
 
     if args.algorithm == "linear":
         if args.use_autocast:
@@ -648,7 +752,7 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False):
                 activations_eigen = powerlaw.get_eigenspectrum(activations)
                 try:
                     alpha, ypred, R2, R2_100 = powerlaw.stringer_get_powerlaw(
-                        activations_eigen, trange=np.arange(3, 50)
+                        activations_eigen, trange=np.arange(3, 100)
                     )
                 except:
                     alpha, R2, R2_100 = np.nan, np.nan, np.nan
@@ -674,9 +778,10 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False):
             results["alpha_arr"] = alpha_arr
             results["R2_arr"] = R2_arr
             results["R2_100_arr"] = R2_100_arr
-        
+
         if use_wandb:
-            log_wandb(results, step=0, skip_keys=['eigenspectrum'])
+            log_wandb_distributed(results, step=0, skip_keys=['eigenspectrum'], 
+                      dist_args=dist_args)
 
     if args.use_autocast:
         scaler = GradScaler()
@@ -688,7 +793,7 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False):
         for param in list(target_model.parameters()):
             param.requires_grad = False
 
-    for epoch in range(1, args.epochs + 1):
+    for epoch in range(start_epoch, args.epochs + 1):
         if epoch == 1 and args.track_alpha:
             # compute alpha before training starts!
             activations = powerlaw.generate_activations_prelayer(
@@ -706,7 +811,7 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False):
             results["R2"].append((epoch - 1, R2))
             results["R2_100"].append((epoch - 1, R2_100))
             print("Initial alpha", results["alpha"])
-
+            
         train_loss = train_step(
             model=model,
             dataloader=loaders["train"],
@@ -715,68 +820,92 @@ def train(model, loaders, optimizer, loss_fn, args, eval_args, use_wandb=False):
             scaler=scaler,
             loss_fn=loss_fn,
             epoch=epoch,
-            args=args,
+            args=args, dist_args=dist_args
         )
 
-        results["train_loss"].append(train_loss)
+        results["train_loss"].append((epoch-1, train_loss))
 
-        if args.algorithm == "linear":
+        if args.algorithm in ["linear", "finetune"]:
             acc_1, acc_5 = eval_step(
-                model, loaders["test"], epoch=epoch, epochs=args.epochs
+                model=model, dataloader=loaders["test"], 
+                args=args, epoch=epoch, epochs=args.epochs
             )
-            results["test_acc_1"].append(acc_1)
-            results["test_acc_5"].append(acc_5)
-            acc_1, acc_5 = eval_step(
-                model, loaders["train"], epoch=epoch, epochs=args.epochs
-            )
-            results["train_acc_1"].append(acc_1)
-            results["train_acc_5"].append(acc_5)
-        elif epoch % args.log_interval == 0:
-            ckpt_path = gen_ckpt_path(args, eval_args, epoch=epoch)
-            state = dict(
-                epoch=epoch + 1,
-                model=model.state_dict(),
-                optimizer=optimizer.state_dict(),
-            )
-            torch.save(state, ckpt_path)
-            if args.track_alpha:
-                # compute alpha at intermediate training steps
-                activations = powerlaw.generate_activations_prelayer(
-                    net=model,
-                    layer=model.backbone.proj,
-                    data_loader=loaders["test"],
-                    use_cuda=True,
+            results["test_acc_1"].append((epoch-1, acc_1))
+            results["test_acc_5"].append((epoch-1, acc_5))
+
+        if epoch % args.log_interval == 0:
+            if args.algorithm == "linear":
+                pass
+            # elif args.algorithm == "finetune":
+            else:
+                ckpt_path = gen_ckpt_path(
+                    args, eval_args, epoch=epoch,
+                    prefix="exp_finetune" if args.algorithm == "finetune" else "exp",
+                    suffix="pth"
                 )
-                activations_eigen = powerlaw.get_eigenspectrum(activations)
-                alpha, ypred, R2, R2_100 = powerlaw.stringer_get_powerlaw(
-                    activations_eigen, trange=np.arange(3, 100)
+
+                state = dict(
+                    epoch=epoch + 1,
+                    model=model.state_dict(),
+                    optimizer=optimizer.state_dict(),
                 )
-                if args.adaptive_ssl:
-                    alpha_gt = max(0, alpha - 1.2)  # check if alpha > 1.2
-                    alpha_lt = max(0, 0.8 - alpha)  # check if alpha < 0.8
-                    # use alpha_gt to increase lambda
-                    # use alpha_lt to decrease lambda
-                    curr_lambda = loss_fn.keywords["_lambda"]
-                    tqdm.write("Current lamda = {:.6f}".format(curr_lambda))
-                    # updated_lambda = curr_lambda*np.exp(alpha_gt-alpha_lt)
-                    updated_lambda = curr_lambda + 0.001 * (alpha_gt - alpha_lt)
-                    tqdm.write(
-                        "alpha = {:.3f}, New lamda = {:.6f}".format(
-                            alpha, updated_lambda
-                        )
+                torch.save(state, ckpt_path)
+                # save results dict as well
+                tmp_save_path = gen_ckpt_path(args, eval_args,
+                                        epoch=args.epochs,
+                                        prefix=f"tmp_results_{args.dataset}_alpha",
+                                        suffix="npy"
+                                        )
+                np.save(tmp_save_path, results)
+            # else:
+            #     ckpt_path = gen_ckpt_path(args, eval_args, epoch=epoch)
+            #     state = dict(
+            #         epoch=epoch + 1,
+            #         model=model.state_dict(),
+            #         optimizer=optimizer.state_dict(),
+            #     )
+            #     torch.save(state, ckpt_path)
+                if args.track_alpha:
+                    # compute alpha at intermediate training steps
+                    activations = powerlaw.generate_activations_prelayer(
+                        net=model,
+                        layer=model.backbone.proj,
+                        data_loader=loaders["test"],
+                        use_cuda=True,
                     )
-                    loss_fn = partial(bt.BarlowTwinLoss, _lambda=updated_lambda)
-                    if "lambda" not in results.keys():
-                        results["lambda"] = []
-                    results["lambda"].append((epoch, updated_lambda))
-                results["eigenspectrum"].append((epoch, activations_eigen))
-                results["alpha"].append((epoch, alpha))
-                results["R2"].append((epoch, R2))
-                results["R2_100"].append((epoch, R2_100))
-                # print(results['alpha'])
-            
+                    activations_eigen = powerlaw.get_eigenspectrum(activations)
+                    alpha, ypred, R2, R2_100 = powerlaw.stringer_get_powerlaw(
+                        activations_eigen, trange=np.arange(3, 100)
+                    )
+                    if args.adaptive_ssl:
+                        alpha_gt = max(0, alpha - 1.2)  # check if alpha > 1.2
+                        alpha_lt = max(0, 0.8 - alpha)  # check if alpha < 0.8
+                        # use alpha_gt to increase lambda
+                        # use alpha_lt to decrease lambda
+                        curr_lambda = loss_fn.keywords["_lambda"]
+                        tqdm.write("Current lamda = {:.6f}".format(curr_lambda))
+                        # updated_lambda = curr_lambda*np.exp(alpha_gt-alpha_lt)
+                        updated_lambda = curr_lambda + 0.001 * (alpha_gt - alpha_lt)
+                        tqdm.write(
+                            "alpha = {:.3f}, New lamda = {:.6f}".format(
+                                alpha, updated_lambda
+                            )
+                        )
+                        loss_fn = partial(bt.BarlowTwinLoss, _lambda=updated_lambda)
+                        if "lambda" not in results.keys():
+                            results["lambda"] = []
+                        results["lambda"].append((epoch, updated_lambda))
+                    results["eigenspectrum"].append((epoch, activations_eigen))
+                    results["alpha"].append((epoch, alpha))
+                    results["R2"].append((epoch, R2))
+                    results["R2_100"].append((epoch, R2_100))
+                    # print(results['alpha'])
+        else:
+            pass
+
         if use_wandb:
-            log_wandb(results, step=epoch, skip_keys=['eigenspectrum'])
+            log_wandb_distributed(results, step=epoch, skip_keys=['eigenspectrum'],
+                                  dist_args=dist_args)
 
     return results
 
@@ -818,15 +947,65 @@ def search_precache_file(training, eval):
         setattr(training, "val_dataset", os.path.join(folder, fname))
 
 
-def run_experiment(args):
+def load_model_opt(training, eval, model, optimizer, dist_args: dict = None):
+    fname_prefix = "exp_{}{}_{}_seed_{}".format(
+        training.algorithm,
+        f"_{eval.train_algorithm}" if training.algorithm == "finetune" else "",
+        eval.epoch,
+        training.seed
+    )
+    saved_path = gen_ckpt_path(
+        training,
+        eval,
+        eval.epoch,  # currently not used in the name
+        fname_prefix,
+        "pth",
+    )
+    folder = os.path.dirname(saved_path)
+    candidate_files = glob.glob(os.path.join(folder, "*.pth"))
+    candidate_files = [os.path.splitext(os.path.basename(f))[0] for f in candidate_files]
+    candidate_files = [f for f in candidate_files if training.algorithm==f.split('_')[1]]
+    candidate_files = [f for f in candidate_files if training.seed==int(f.split('_')[-1])]
+    if len(candidate_files) == 0:
+        print_distributed("No existing checkpoint file found! Running training from scratch!", 
+                          dist_args)
+        return 1, None
+    
+    else:
+        candidate_files.sort(key=lambda x: int(x.split('_')[-3]))
+        last_epoch_ckpt = os.path.join(folder, f"{candidate_files[-1]}.pth")
+        
+        last_epoch_ckpt_state_dict = torch.load(last_epoch_ckpt)
+        if 'Linear' in model.__class__.__name__ and training.distributed is False:
+            model.load_backbone(last_epoch_ckpt, requires_grad=True)
+        else:
+            model.load_state_dict(last_epoch_ckpt_state_dict['model'])
+        optimizer.load_state_dict(last_epoch_ckpt_state_dict['optimizer'])
+        epoch = last_epoch_ckpt_state_dict['epoch']
+        print_distributed(f"Resuming training from {epoch} epochs", dist_args) 
+        print_distributed(f"Loaded {last_epoch_ckpt.split(training.ckpt_dir)[-1][1:]}!", 
+                          dist_args)
+
+        # load saved results dict as well
+        results_files = glob.glob(os.path.join(folder, "tmp_results*.npy"))
+        if len(results_files) > 0:
+            results_dict = np.load(results_files[0], allow_pickle=True).item()
+        else:
+            results_dict = None
+
+        return epoch, results_dict
+
+
+def run_experiment(args, dist_args):
     # import ray
     # num_cpus = int(os.environ.get('SLURM_CPUS_PER_TASK'))
     # ray.init(num_cpus=2)
     training = args.training
+    finetune = args.finetune
     eval = args.eval
 
     set_seeds(training.seed)
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
 
     if eval.use_precache:
         search_precache_file(training, eval)
@@ -841,16 +1020,26 @@ def run_experiment(args):
         training.num_workers,
         training.num_augmentations,
     )
-    print("CONSTRUCTED DATA LOADERS")
+    print_distributed("CONSTRUCTED DATA LOADERS", dist_args)
     # breakpoint()
 
     # build model from SSL library
     model = build_model(args)
-    print("CONSTRUCTED MODEL")
+    print_distributed("CONSTRUCTED MODEL", dist_args)
+    if training.distributed:
+        model = torch.nn.parallel.DistributedDataParallel(
+            model, 
+            device_ids=[dist_args.gpu])
+        print(model.device)
 
     # build optimizer
-    optimizer = build_optimizer(model, training)
-    print("CONSTRUCTED OPTIMIZER")
+    if training.algorithm == "finetune":
+        optimizer = build_optimizer(model, finetune, dist_args)
+    else:
+        optimizer = build_optimizer(model, training)
+    print_distributed("CONSTRUCTED OPTIMIZER", dist_args)
+
+    start_epoch, results_loaded = load_model_opt(training, eval, model, optimizer, dist_args)
 
     if training.precache:
         print("Precaching model outputs, no training")
@@ -870,11 +1059,12 @@ def run_experiment(args):
     else:
         # get loss function
         loss_fn = build_loss_fn(training)
-        print("CONSTRUCTED LOSS FUNCTION")
+        print_distributed("CONSTRUCTED LOSS FUNCTION", dist_args)
 
         # train the model with default=BT
+        # breakpoint()
         results = train(model, loaders, optimizer, loss_fn, training, eval,
-                        args.logging.use_wandb)
+                        start_epoch, args.logging.use_wandb, dist_args, results_loaded)
 
         # save results
         save_path = gen_ckpt_path(
@@ -898,7 +1088,8 @@ def bt_trainer(config):
 
 if __name__ == "__main__":
     # gather arguments
-    args = get_args_from_config()
+    # args = get_args_from_config()
+    args, dist_args = get_args_from_config_distributed()
     args.training.datadir = args.training.datadir.format(dataset=args.training.dataset)
     args.training.train_dataset = args.training.train_dataset.format(
         dataset=args.training.dataset
@@ -906,31 +1097,36 @@ if __name__ == "__main__":
     args.training.val_dataset = args.training.val_dataset.format(
         dataset=args.training.dataset
     )
+    if args.training.distributed or args.finetune.distributed:
+        args.training.distributed = True
+        args.finetune.distributed = True
     logging_modelname = args.training.model
     logging_modelname = logging_modelname.replace("proj", "")
     logging_modelname = logging_modelname.replace("feat", "")
     logging_jobtype = args.training.algorithm
-    if logging_jobtype == 'linear':
+    if logging_jobtype in ['linear','finetune']:
         logging_jobtype = f'{args.eval.train_algorithm}_{logging_jobtype}'
     if args.logging.use_wandb:
-        start_wandb_server(train_config_dict=args.training.__dict__,
-                           eval_config_dict=args.eval.__dict__,
-                           wandb_group=args.logging.wandb_group,
-                           wandb_project=args.logging.wandb_project,
-                           exp_name=f'{logging_modelname}_' +\
-                                    f'{args.training.algorithm}_' +\
-                                    f'{args.training.seed}',
-                           exp_group=f'{logging_modelname}',
-                           exp_job_type=f'{logging_jobtype}'
-                           )
+        if dist_args.local_rank in [-1,0]:
+            start_wandb_server(train_config_dict=args.training.__dict__,
+                            eval_config_dict=args.eval.__dict__,
+                            finetune_config_dict=args.finetune.__dict__,
+                            wandb_group=args.logging.wandb_group,
+                            wandb_project=args.logging.wandb_project,
+                            exp_name=f'{logging_modelname}_' +\
+                                        f'{args.training.algorithm}_' +\
+                                        f'{args.training.seed}',
+                            exp_group=f'{logging_modelname}',
+                            exp_job_type=f'{logging_jobtype}'
+                            )
 
     # train model
     start_time = time.time()
-    save_fname = run_experiment(args)
+    save_fname = run_experiment(args, dist_args)
 
     # wrapup experiments with logging key variables
-    print(f"Total time: {time.time() - start_time}")
-    print(f"Results saved to {save_fname}")
+    print_distributed(f"Total time: {time.time() - start_time}", dist_args)
+    print_distributed(f"Results saved to {save_fname}", dist_args)
 
     if args.logging.use_wandb: 
         stop_wandb_server()

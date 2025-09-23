@@ -1,54 +1,68 @@
-"""
-## NOTE: Supports FFCV and PyTorch dataloaders. 
-* linear classifier: 
-    * FP16 is sufficient, reasonable speed and little drop in accuracy (Acc@1 is within +/- 0.1)
-* SSL : Seems like autocast is important for good performance.
-"""
-from typing import List 
-
-from ffcv.fields import IntField, RGBImageField
-from ffcv.fields.decoders import IntDecoder, SimpleRGBImageDecoder, RandomResizedCropRGBImageDecoder
+# Ffcv dataloaders for imagenet to run barlow twins
+import torch
+import torchvision
+from typing import List
+from ffcv.fields.decoders import (
+    IntDecoder,
+    SimpleRGBImageDecoder,
+)
 from ffcv.loader import Loader, OrderOption
 from ffcv.pipeline.operation import Operation
-import numpy as np
-import torch
-import torchvision.transforms as tvt
-from ffcv.transforms import RandomResizedCrop, RandomHorizontalFlip, Cutout, \
-    RandomTranslate, Convert, ToDevice, ToTensor, ToTorchImage
-from ffcv.transforms.common import Squeeze
-
-from fastssl.data.misc_transforms import STLTransform, SSLPT_STL, ReScale, STLClassifierTransform, STLTransformFFCV
-
-import torch
-from torch.utils.data import DataLoader
-import torchvision
+from ffcv.transforms import (
+    RandomHorizontalFlip, 
+    Squeeze, 
+    ToDevice, 
+    ToTensor, 
+    Convert,
+    NormalizeImage,
+    ToTorchImage, 
+    RandomResizedCrop
+)
+from ffcv.fields.rgb_image import CenterCropRGBImageDecoder
+from fastssl.data.custom_transforms import TransformImagenet, GaussianBlur, Solarization
 import torchvision.transforms as transforms
+from PIL import Image
+
+from fastssl.data.misc_transforms import (
+    ImagenetClassifierTransform,
+    Imagenet1kTransformFFCV, Imagenet1kTransformFFCV_v2,
+    ImagenetTransformFFCV
+)
+
+import numpy as np
+
+IMG_SIZE = 128 #224
+DEFAULT_CROP_RATIO = 128/256 #224/256
+
 
 def to_device(device):
-    if device == 'cuda:0':
+    if device == "cuda:0":
         return ToDevice(device, non_blocking=True)
     else:
         return ToDevice("cpu")
 
-def gen_image_pipeline(device="cuda:0", transform_cls=None, rescale=False):
-    image_pipeline : List[Operation] = [
-        SimpleRGBImageDecoder(),
+
+def gen_image_pipeline(device="cuda:0", transform_cls=None):
+    image_pipeline: List[Operation] = [
+        CenterCropRGBImageDecoder((IMG_SIZE,IMG_SIZE), ratio=DEFAULT_CROP_RATIO),
         ToTensor(),
         to_device(device),
         ToTorchImage(),
-        Convert(torch.float32),
+        # Convert(torch.float32),
+        # NormalizeImage(IMAGENET_MEAN, IMAGENET_STD, np.float16),
     ]
-    # no rescaling required anymore!
-    # if rescale:
-    #     image_pipeline.append(ReScale(1.0/255.0))
-    image_pipeline.append(transform_cls())
+
+    if transform_cls:
+        image_pipeline.extend(transform_cls().transform_list)
 
     return image_pipeline
 
-def gen_image_pipeline_ffcv_ssl(device="cuda:0", transform_cls=None, rescale=False):
+
+def gen_image_pipeline_ffcv_ssl(device="cuda:0", transform_cls=None):
     if transform_cls:
         image_pipeline: List[Operation] = [
-            RandomResizedCropRGBImageDecoder(
+            # RandomResizedCrop((224, 224))
+            RandomResizedCrop(
                 output_size=(
                     transform_cls.dataset_side_length,
                     transform_cls.dataset_side_length,
@@ -68,48 +82,39 @@ def gen_image_pipeline_ffcv_ssl(device="cuda:0", transform_cls=None, rescale=Fal
             ToTensor(),
             to_device(device),
             ToTorchImage(),
-            Convert(torch.float32),
+            # Convert(torch.float32),
+            # NormalizeImage(IMAGENET_MEAN, IMAGENET_STD, np.float16),
+            # transforms.GaussianBlur(kernel_size=(5, 9), sigma=(0.1, 2))
         ]
     )
+    # print(transform_cls.transform_list)
+    if transform_cls and hasattr(transform_cls, 'gaussian_blur_tfo'):
+        image_pipeline.extend([transform_cls.gaussian_blur_tfo])
+        # print(image_pipeline)
 
     return image_pipeline
 
-def gen_image_pipeline_ffcv_test(device="cuda:0", transform_cls=None, rescale=False):
-    # image_pipeline : List[Operation] = [SimpleRGBImageDecoder()]
-    image_pipeline : List[Operation] = [RandomResizedCropRGBImageDecoder(
-                                        output_size=(transform_cls.dataset_side_length,transform_cls.dataset_side_length),
-                                        scale=transform_cls.dataset_resize_scale,ratio=transform_cls.dataset_resize_ratio)]
-    if transform_cls:
-        image_pipeline.extend(transform_cls.transform_list)
-
-    image_pipeline.extend([
-        ToTensor(),
-        to_device(device),
-        ToTorchImage(),
-        Convert(torch.float32),
-    ])
-
-    return image_pipeline
 
 def gen_label_pipeline(device="cuda:0", transform_cls=None):
     label_pipeline: List[Operation] = [
         IntDecoder(),
         ToTensor(),
         ToDevice("cuda:0"),
-        Squeeze()]
+        Squeeze(),
+    ]
     return label_pipeline
+
 
 def gen_image_label_pipeline(
     train_dataset: str = None,
     val_dataset: str = None,
     batch_size: int = None,
     num_workers: int = None,
-    transform_cls: STLClassifierTransform = None,
-    rescale: bool = False,
+    transform_cls: ImagenetClassifierTransform = None,
     device: str = "cuda:0",
     num_augmentations: int = 1,
-    transform_cls_augs: STLTransformFFCV = None,
-    ):
+    transform_cls_augs: ImagenetTransformFFCV = None,
+):
     """Generate image and label pipelines for supervised classification.
 
     Args:
@@ -117,96 +122,38 @@ def gen_image_label_pipeline(
         val_dataset (str, optional): path to test dataset. Defaults to None.
         batch_size (int, optional): batch-size. Defaults to None.
         num_workers (int, optional): number of CPU workers. Defaults to None.
-        transform_cls (STLClassifierTransform, optional): Transforms to be applied for the original image. Defaults to None.
-        rescale (bool, optional): Flag to rescale pixel vals to [0,1]. Defaults to False.
-        device (_type_, optional): CPU/GPU. Defaults to 'cuda:0'.
+        transform_cls (ImagenetClassifierTransform, optional): Transforms to be applied for the original image. Defaults to None.
+        device (str, optional): CPU/GPU. Defaults to 'cuda:0'.
         num_augmentations (int, optional): Number of total image augmentations. Defaults to 1.
-        transform_cls_augs (STLTransformFFCV, optional): Transforms to be applied to generate other augmentations. Defaults to None.
+        transform_cls_augs (ImagenetTransformFFCV, optional): Transforms to be applied to generate other augmentations. Defaults to None.
 
     Returns:
         loaders : dict('train': dataloader, 'test': dataloader)
     """
 
-    datadir = {'train': train_dataset, 'test': val_dataset}
+    datadir = {"train": train_dataset, "test": val_dataset}
     assert num_augmentations > 0, "Please use at least 1 augmentation for classifier."
-    
+
     loaders = {}
 
-    for split in ['train', 'test']:
+    for split in ["train", "test"]:
         if datadir[split] is None: continue
-        label_pipeline  = gen_label_pipeline(device=device)
+        label_pipeline = gen_label_pipeline(device=device)
         image_pipeline = gen_image_pipeline(
-            device=device, transform_cls=transform_cls, rescale=rescale
+            device=device, transform_cls=transform_cls
         )
         if num_augmentations > 1:
             image_pipeline_augs = [
                 gen_image_pipeline_ffcv_ssl(
-                    device=device, transform_cls=transform_cls_augs, rescale=rescale
+                    device=device, transform_cls=transform_cls_augs
                 )
             ] * (num_augmentations - 1)
         else:
             image_pipeline_augs = []
-        ordering = OrderOption.RANDOM if split == 'train' else OrderOption.SEQUENTIAL
+        ordering = OrderOption.RANDOM if split == "train" else OrderOption.SEQUENTIAL
         # ordering = OrderOption.RANDOM #if split == 'train' else OrderOption.SEQUENTIAL
 
         pipelines = {"image": image_pipeline, "label": label_pipeline}
-        custom_field_img_mapper = {}
-        for i, aug_pipeline in enumerate(image_pipeline_augs):
-            pipelines["image{}".format(i + 1)] = aug_pipeline
-            custom_field_img_mapper["image{}".format(i + 1)] = "image"
-        
-        loaders[split] = Loader(
-            datadir[split],
-            batch_size=batch_size,  
-            num_workers=num_workers,
-            os_cache=True,
-            order=ordering,
-            drop_last=False,
-            pipelines=pipelines,
-            custom_field_mapper=custom_field_img_mapper,
-           )
-    return loaders
-
-def gen_image_label_pipeline_ffcv_ssl_test(
-    train_dataset: str = None,
-    val_dataset: str = None,
-    batch_size: int = None,
-    num_workers: int = None,
-    transform_cls: STLTransformFFCV = None,
-    rescale: bool = False,
-    device: str = "cuda:0",
-    num_augmentations: int = 2,
-):
-    """Test function for generating multiple augmentations from each image.
-
-    Args:
-        train_dataset (str, optional): Train dataset filename. Defaults to None.
-        val_dataset (str, optional): Test dataset filename. Defaults to None.
-        batch_size (int, optional): Batch size. Defaults to None.
-        num_workers (int, optional): Number of CPU workers. Defaults to None.
-        transform_cls (STLTransformFFCV, optional): Transform object. Defaults to None.
-        rescale (bool, optional): Flag to rescale pixel vals to [0,1]. Defaults to False.
-        device (_type_, optional): CPU/GPU. Defaults to 'cuda:0'.
-        num_augmentations (int, optional): Number of patches. Defaults to 2.
-
-    Returns:
-        loaders: dict('train': dataloader, 'test': dataloader)
-    """
-    datadir = {"train": train_dataset, "test": val_dataset}
-    assert num_augmentations > 1, "Please use at least 2 augmentations for SSL."
-
-    loaders = {}
-    for split in ["train", "test"]:
-        if datadir[split] is None: continue
-        image_pipeline_og = gen_image_pipeline(device=device, rescale=rescale)
-        label_pipeline = gen_label_pipeline(device=device)
-        image_pipeline_augs = [
-            gen_image_pipeline_ffcv_ssl(
-                device=device, transform_cls=transform_cls, rescale=rescale
-            )
-        ] * num_augmentations
-        ordering = OrderOption.SEQUENTIAL
-        pipelines = {"image": image_pipeline_og, "label": label_pipeline}
         custom_field_img_mapper = {}
         for i, aug_pipeline in enumerate(image_pipeline_augs):
             pipelines["image{}".format(i + 1)] = aug_pipeline
@@ -219,22 +166,23 @@ def gen_image_label_pipeline_ffcv_ssl_test(
             os_cache=True,
             order=ordering,
             drop_last=False,
+            distributed=True,
+            # pipelines={'image' : image_pipeline, 'label' : label_pipeline}
             pipelines=pipelines,
             custom_field_mapper=custom_field_img_mapper,
         )
-
     return loaders
+
 
 def gen_image_label_pipeline_ffcv_ssl(
     train_dataset: str = None,
     val_dataset: str = None,
     batch_size: int = None,
     num_workers: int = None,
-    transform_cls: STLTransformFFCV = None,
-    rescale: bool = False,
+    transform_cls: ImagenetTransformFFCV = None,
     device: str = "cuda:0",
     num_augmentations: int = 2,
-):  
+):
     """Function for generating multiple augmentations from each image.
 
     Args:
@@ -242,9 +190,8 @@ def gen_image_label_pipeline_ffcv_ssl(
         val_dataset (str, optional): Test dataset filename. Defaults to None.
         batch_size (int, optional): Batch size. Defaults to None.
         num_workers (int, optional): Number of CPU workers. Defaults to None.
-        transform_cls (STLTransformFFCV, optional): Transform object. Defaults to None.
-        rescale (bool, optional): Flag to rescale pixel vals to [0,1]. Defaults to False.
-        device (_type_, optional): CPU/GPU. Defaults to 'cuda:0'.
+        transform_cls (CifarTransformFFCV, optional): Transform object. Defaults to None.
+        device (str, optional): CPU/GPU. Defaults to 'cuda:0'.
         num_augmentations (int, optional): Number of patches. Defaults to 2.
 
     Returns:
@@ -259,12 +206,12 @@ def gen_image_label_pipeline_ffcv_ssl(
     for split in ["train"]:
         if train_dataset is None: continue
         image_pipeline1 = gen_image_pipeline_ffcv_ssl(
-            device=device, transform_cls=transform_cls, rescale=rescale
+            device=device, transform_cls=transform_cls
         )
         label_pipeline = gen_label_pipeline(device=device)
         image_pipeline_augs = [
             gen_image_pipeline_ffcv_ssl(
-                device=device, transform_cls=transform_cls, rescale=rescale
+                device=device, transform_cls=transform_cls
             )
         ] * (
             num_augmentations - 1
@@ -287,6 +234,7 @@ def gen_image_label_pipeline_ffcv_ssl(
             order=ordering,
             drop_last=False,
             pipelines=pipelines,
+            distributed=True,
             custom_field_mapper=custom_field_img_mapper,
         )
 
@@ -294,7 +242,7 @@ def gen_image_label_pipeline_ffcv_ssl(
         if val_dataset is None: continue
         label_pipeline = gen_label_pipeline(device=device)
         image_pipeline = gen_image_pipeline(
-            device=device, transform_cls=STLClassifierTransform, rescale=rescale
+            device=device, transform_cls=ImagenetClassifierTransform
         )
 
         ordering = (
@@ -308,21 +256,114 @@ def gen_image_label_pipeline_ffcv_ssl(
             os_cache=True,
             order=ordering,
             drop_last=False,
+            distributed=False,
             pipelines={"image": image_pipeline, "label": label_pipeline},
         )
 
     return loaders
 
-def stl_ffcv(
+
+def gen_image_label_pipeline_ffcv_ssl_asymm_augs(
+    train_dataset: str = None,
+    val_dataset: str = None,
+    batch_size: int = None,
+    num_workers: int = None,
+    transform_cls: Imagenet1kTransformFFCV = None,
+    transform_cls_v2: Imagenet1kTransformFFCV_v2 = None,
+    device: str = "cuda:0",
+    num_augmentations: int = 2,
+):
+    """Function for generating multiple augmentations from each image. Uses
+        asymmetric augmentation pipelines, chosen alternatively between
+        transform_cls and transform_cls_v2.
+
+    Args:
+        train_dataset (str, optional): Train dataset filename. Defaults to None.
+        val_dataset (str, optional): Test dataset filename. Defaults to None.
+        batch_size (int, optional): Batch size. Defaults to None.
+        num_workers (int, optional): Number of CPU workers. Defaults to None.
+        transform_cls (Imagenet1kTransformFFCV, optional): Transform object. Defaults to None.
+        transform_cls_v2 (Imagenet1kTransformFFCV_v2, optional): Transform object. Defaults to None.
+        device (str, optional): CPU/GPU. Defaults to 'cuda:0'.
+        num_augmentations (int, optional): Number of patches. Defaults to 2.
+
+    Returns:
+        loaders: dict('train': dataloader, 'test': dataloader)
+    """
+
+    datadir = {"train": train_dataset, "test": val_dataset}
+    assert num_augmentations > 1, "Please use at least 2 augmentations for SSL."
+
+    loaders = {}
+
+    for split in ["train"]:
+        if train_dataset is None: continue
+        image_pipeline1 = gen_image_pipeline_ffcv_ssl(
+            device=device, transform_cls=transform_cls
+        )
+        label_pipeline = gen_label_pipeline(device=device)
+        image_pipeline_augs = [
+            gen_image_pipeline_ffcv_ssl(
+                device=device, 
+                transform_cls=transform_cls_v2 if aidx%2 == 0 else transform_cls
+            )
+        for aidx in range(num_augmentations - 1)]  # creating other augmentations
+
+        ordering = OrderOption.RANDOM  # if split == 'train' else OrderOption.SEQUENTIAL
+        # ordering = OrderOption.SEQUENTIAL #if split == 'train' else OrderOption.SEQUENTIAL
+
+        pipelines = {"image": image_pipeline1, "label": label_pipeline}
+        custom_field_img_mapper = {}
+        for i, aug_pipeline in enumerate(image_pipeline_augs):
+            pipelines["image{}".format(i + 1)] = aug_pipeline
+            custom_field_img_mapper["image{}".format(i + 1)] = "image"
+
+        loaders[split] = Loader(
+            datadir[split],
+            batch_size=batch_size,
+            num_workers=num_workers,
+            os_cache=True,
+            order=ordering,
+            drop_last=False,
+            pipelines=pipelines,
+            distributed=True,
+            custom_field_mapper=custom_field_img_mapper,
+        )
+
+    for split in ["test"]:
+        if val_dataset is None: continue
+        label_pipeline = gen_label_pipeline(device=device)
+        image_pipeline = gen_image_pipeline(
+            device=device, transform_cls=ImagenetClassifierTransform
+        )
+
+        ordering = (
+            OrderOption.SEQUENTIAL
+        )  # if split == 'train' else OrderOption.SEQUENTIAL
+
+        loaders[split] = Loader(
+            datadir[split],
+            batch_size=batch_size,
+            num_workers=num_workers,
+            os_cache=True,
+            order=ordering,
+            drop_last=False,
+            distributed=False,
+            pipelines={"image": image_pipeline, "label": label_pipeline},
+        )
+
+    return loaders
+
+
+def imagenet_ffcv_dist(
     train_dataset: str = None,
     val_dataset: str = None,
     batch_size: int = None,
     num_workers: int = None,
     device: str = "cuda:0",
     num_augmentations: int = 2,
-    test_ffcv: bool = False,
 ):
-    """Function to return dataloader for STL-10 SSL
+    """Function to return dataloader for Imagenet-100 SSL
 
     Args:
         train_dataset (str, optional): Train dataset filename. Defaults to None.
@@ -331,29 +372,25 @@ def stl_ffcv(
         num_workers (int, optional): Number of CPU workers. Defaults to None.
         device (str, optional): CPU/GPU. Defaults to 'cuda:0'.
         num_augmentations (int, optional): Number of patches. Defaults to 2.
-        test_ffcv (bool, optional): Flag to use pipeline for testing FFCV multi-augmentations
 
     Returns:
         loaders : dict('train': dataloader, 'test': dataloader)
     """
 
-    transform_cls = STLTransformFFCV()
-    if test_ffcv:
-        gen_img_label_fn = gen_image_label_pipeline_ffcv_ssl_test
-    else:
-        gen_img_label_fn = gen_image_label_pipeline_ffcv_ssl
+    transform_cls = ImagenetTransformFFCV()
+    gen_img_label_fn = gen_image_label_pipeline_ffcv_ssl
     return gen_img_label_fn(
         train_dataset=train_dataset,
         val_dataset=val_dataset,
         batch_size=batch_size,
         num_workers=num_workers,
         transform_cls=transform_cls,
-        rescale=False,
         device=device,
         num_augmentations=num_augmentations,
     )
 
-def stl_classifier_ffcv(
+
+def imagenet_classifier_ffcv_dist(
     train_dataset: str = None,
     val_dataset: str = None,
     batch_size: int = None,
@@ -361,22 +398,22 @@ def stl_classifier_ffcv(
     device: str = "cuda:0",
     num_augmentations: int = 1,
 ):
-    """Function to return dataloader for STL-10 classification
+    """Function to return dataloader for Imagenet-1k classification
 
     Args:
         train_dataset (str, optional): Train dataset filename. Defaults to None.
         val_dataset (str, optional): Test dataset filename. Defaults to None.
         batch_size (int, optional): Batch size. Defaults to None.
         num_workers (int, optional): Number of CPU workers. Defaults to None.
-        device (_type_, optional): CPU/GPU. Defaults to 'cuda:0'.
+        device (str, optional): CPU/GPU. Defaults to 'cuda:0'.
         num_augmentations (int, optional): Number of patches. Defaults to 1.
 
     Returns:
         loaders : dict('train': dataloader, 'test': dataloader)
     """
-    
-    transform_cls = STLClassifierTransform
-    transform_cls_extra_augs = STLTransformFFCV()
+
+    transform_cls = ImagenetClassifierTransform
+    transform_cls_extra_augs = ImagenetTransformFFCV()
     return gen_image_label_pipeline(
         train_dataset=train_dataset,
         val_dataset=val_dataset,
@@ -388,38 +425,38 @@ def stl_classifier_ffcv(
         transform_cls_augs=transform_cls_extra_augs,
     )
 
-def stl10_pt(
-    datadir,
-    batch_size=None,
-    num_workers=None,
-    device="cuda:0",
-    splits=['unlabeled']):
-    """
-    Create pytorch compatible dataloaders for STL-10.
-    """
-    loaders = {}
-    for split in splits:
-        dataset = torchvision.datasets.STL10(
-            root=datadir, split=split, download=False,
-            transform=SSLPT_STL())
-        loaders['train' if 'unlabeled' in split else split] = DataLoader(
-            dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
-    return loaders
+def imagenet1k_ffcv_dist(
+    train_dataset: str = None,
+    val_dataset: str = None,
+    batch_size: int = None,
+    num_workers: int = None,
+    device: str = "cuda:0",
+    num_augmentations: int = 2,
+):
+    """Function to return dataloader for Imagenet-1k SSL
 
-def stl10_classifier_pt(
-    datadir,
-    batch_size=None,
-    num_workers=None,
-    device="cuda:0",
-    splits=['train', 'test']):
+    Args:
+        train_dataset (str, optional): Train dataset filename. Defaults to None.
+        val_dataset (str, optional): Test dataset filename. Defaults to None.
+        batch_size (int, optional): Batch size. Defaults to None.
+        num_workers (int, optional): Number of CPU workers. Defaults to None.
+        device (str, optional): CPU/GPU. Defaults to 'cuda:0'.
+        num_augmentations (int, optional): Number of patches. Defaults to 2.
+
+    Returns:
+        loaders : dict('train': dataloader, 'test': dataloader)
     """
-    Create pytorch compatible dataloaders for CIFAR-10.
-    """
-    loaders = {}
-    for split in splits:
-        dataset = torchvision.datasets.STL10(
-            root=datadir, split=split, download=True,
-            transform=STLClassifierTransform())
-        loaders[split] = DataLoader(
-            dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
-    return loaders
+
+    transform_cls = Imagenet1kTransformFFCV()
+    transform_cls_2 = Imagenet1kTransformFFCV_v2()
+    gen_img_label_fn = gen_image_label_pipeline_ffcv_ssl_asymm_augs
+    return gen_img_label_fn(
+        train_dataset=train_dataset,
+        val_dataset=val_dataset,
+        batch_size=batch_size,
+        num_workers=num_workers,
+        transform_cls=transform_cls,
+        transform_cls_v2=transform_cls_2,
+        device=device,
+        num_augmentations=num_augmentations,
+    )
